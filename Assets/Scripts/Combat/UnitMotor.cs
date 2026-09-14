@@ -34,7 +34,7 @@ namespace RuneArena.Combat
         public Vector3 DashDirection => _dashDir;
         public Vector3 DashStart { get; private set; }
 
-        public bool CanMove => Owner != null && Owner.IsAlive && !Locked && !IsDashing
+        public bool CanMove => Owner != null && Owner.IsAlive && !Owner.IsStatic && !Locked && !IsDashing
             && Owner.Status != null && !Owner.Status.IsStunned && !Owner.Status.IsRooted;
 
         private void Awake()
@@ -80,14 +80,14 @@ namespace RuneArena.Combat
         /// <summary>Starts a dash of 'distance' units along dir at 'speed' units/s, clamped by walls. Publishes DashPerformed when done and calls onComplete.</summary>
         public void BeginDash(Vector3 dir, float distance, float speed, Action onComplete)
         {
-            if (Owner == null || !Owner.IsAlive || Locked) return;
+            if (Owner == null || !Owner.IsAlive || Owner.IsStatic || Locked) return;
             StartDisplacement(dir, distance, speed, onComplete, true);
         }
 
         /// <summary>Pushes the unit 'distance' units along dir over a short time (knockback / pull). Interrupts a running dash.</summary>
         public void BeginKnockback(Vector3 dir, float distance)
         {
-            if (Owner == null || !Owner.IsAlive || distance <= 0f) return;
+            if (Owner == null || !Owner.IsAlive || Owner.IsStatic || distance <= 0f) return;
             StartDisplacement(dir, distance, distance / KnockbackSeconds, null, false);
         }
 

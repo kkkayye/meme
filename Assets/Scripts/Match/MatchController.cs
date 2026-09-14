@@ -46,6 +46,7 @@ namespace RuneArena.Match
         public UiRoot Ui { get; private set; }
         public JuiceListener Juice { get; private set; }
         public ChestSpawner Chests { get; private set; }
+        public LaneController Lane { get; private set; }
         public PlayerCamera Camera { get; private set; }
         public PlayerInput Input { get; private set; }
 
@@ -58,13 +59,14 @@ namespace RuneArena.Match
         }
 
         /// <summary>Wires the long-lived scene objects created by Bootstrap. Call once.</summary>
-        public void Initialize(UiRoot ui, JuiceListener juice, Arena arena, ControlPoint controlPoint, ChestSpawner chests, PlayerCamera camera, PlayerInput input)
+        public void Initialize(UiRoot ui, JuiceListener juice, Arena arena, ControlPoint controlPoint, ChestSpawner chests, LaneController lane, PlayerCamera camera, PlayerInput input)
         {
             Ui = ui;
             Juice = juice;
             Arena = arena;
             ControlPoint = controlPoint;
             Chests = chests;
+            Lane = lane;
             Camera = camera;
             Input = input;
             _runner = new MatchPhaseRunner(this);
@@ -179,6 +181,7 @@ namespace RuneArena.Match
             GameServices.Arena = Arena;
             GameServices.ControlPoint = ControlPoint;
             GameServices.Chests = Chests;
+            GameServices.Lane = Lane;
             Arena.Build();
             GameServices.World.Arena = Arena;
             ControlPoint.Build(Arena.Center);
@@ -223,6 +226,7 @@ namespace RuneArena.Match
             if (_unitsRoot != null) Destroy(_unitsRoot.gameObject);
             _unitsRoot = null;
             Chests?.ClearAll();
+            Lane?.ClearAll();
             if (CombatFx.Exists) CombatFx.Instance.ClearAll();
             Arena?.Clear();
             GameServices.World?.Clear();
@@ -244,19 +248,56 @@ namespace RuneArena.Match
         private void OnUnitDied(UnitDied e)
         {
             if (!IsMatchActive || Phase != MatchPhase.Combat || e.Victim == null) return;
-            Team scoringTeam = e.Killer != null && e.Killer.Team != e.Victim.Team ? e.Killer.Team : Opposite(e.Victim.Team);
-            GameServices.Scoring?.RecordKill(scoringTeam);
-            if (e.Killer == null || e.Killer.Team == e.Victim.Team) return;
-            e.Killer.AddGold(GameConstants.KillGold);
-            CombatWorld world = GameServices.World;
-            if (world == null) return;
-            foreach (Unit ally in world.AlliesOf(e.Killer.Team))
+            Team attackerTeam = e.Killer != null && e.Killer.Team != e.Victim.Team ? e.Killer.Team : Opposite(e.Victim.Team);
+            switch (e.Victim.Kind)
             {
-                if (ReferenceEquals(ally, e.Killer)) continue;
-                if (CombatWorld.FlatSqrDistance(ally.Position, e.Victim.Position) <= GameConstants.AssistRadius * GameConstants.AssistRadius)
+                case UnitKind.Hero: OnHeroKilled(e, attackerTeam); break;
+                case UnitKind.Minion: OnMinionKilled(e, attackerTeam); break;
+                case UnitKind.Tower: OnTowerDestroyed(e.Victim, attackerTeam); break;
+            }
+        }
+
+        private void OnHeroKilled(UnitDied e, Team attackerTeam)
+        {
+            GameServices.Scoring?.RecordKill(attackerTeam);
+            if (e.Killer == null || e.Killer.Team == e.Victim.Team || !e.Killer.IsHero) return;
+            e.Killer.AddGold(GameConstants.KillGold);
+            ShareGold(e.Killer, e.Victim.Position, GameConstants.AssistGold, GameConstants.AssistRadius);
+        }
+
+        /// <summary>Last hit gold to the killing hero, a share to nearby allied heroes; kills by minions/towers pay nothing.</summary>
+        private void OnMinionKilled(UnitDied e, Team attackerTeam)
+        {
+            GameServices.Scoring?.RecordMinionKill(attackerTeam);
+            if (e.Killer == null || e.Killer.Team == e.Victim.Team || !e.Killer.IsHero) return;
+            int gold = Content.MinionCatalog.GoldFor(e.Victim.Hero);
+            e.Killer.AddGold(gold);
+            ShareGold(e.Killer, e.Victim.Position, Mathf.RoundToInt(gold * GameConstants.MinionGoldShareFraction), GameConstants.MinionGoldShareRadius);
+        }
+
+        /// <summary>Tower gold to every hero of the attacking team, then the round ends in their favour.</summary>
+        private void OnTowerDestroyed(Unit tower, Team attackerTeam)
+        {
+            CombatWorld world = GameServices.World;
+            if (world != null)
+            {
+                foreach (Unit hero in world.UnitsOfTeam(attackerTeam))
                 {
-                    ally.AddGold(GameConstants.AssistGold);
+                    if (hero.IsHero) hero.AddGold(GameConstants.TowerGold);
                 }
+            }
+            EventBus.Publish(new TowerDestroyed(tower, tower.Team, attackerTeam));
+            _runner?.RequestRoundEnd(attackerTeam);
+        }
+
+        private static void ShareGold(Unit killer, Vector3 at, int amount, float radius)
+        {
+            CombatWorld world = GameServices.World;
+            if (world == null || amount <= 0) return;
+            foreach (Unit ally in world.AlliesOf(killer.Team))
+            {
+                if (ReferenceEquals(ally, killer) || !ally.IsHero) continue;
+                if (CombatWorld.FlatSqrDistance(ally.Position, at) <= radius * radius) ally.AddGold(amount);
             }
         }
 

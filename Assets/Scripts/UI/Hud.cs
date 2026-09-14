@@ -20,6 +20,7 @@ namespace RuneArena.UI
         private Text _phase;
         private Text _gold;
         private Text _controlText;
+        private Text _laneText;
         private Image _hpFill;
         private Image _shieldFill;
         private Text _hpText;
@@ -69,6 +70,8 @@ namespace RuneArena.UI
             UiFactory.Place(_gold.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -16f), new Vector2(300f, 40f));
             _controlText = UiFactory.OutlinedText(_root, "Control", "", 22, UiStyle.TextMuted, TextAnchor.MiddleLeft);
             UiFactory.Place(_controlText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -56f), new Vector2(400f, 30f));
+            _laneText = UiFactory.OutlinedText(_root, "Lane", "", 22, UiStyle.TextMuted, TextAnchor.MiddleLeft);
+            UiFactory.Place(_laneText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(24f, -86f), new Vector2(520f, 30f));
         }
 
         private void BuildPlayerBar()
@@ -135,6 +138,7 @@ namespace RuneArena.UI
             _timer.text = match.Phase == MatchPhase.Combat ? UiText.FormatClock(match.PhaseTimeRemaining) : UiText.FormatWhole(match.PhaseTimeRemaining);
             _phase.text = "Round " + match.Round + "  ·  " + PhaseLabel(match.Phase);
             UpdateControlPoint();
+            UpdateLane();
             if (_unit == null) return;
             _gold.text = "Gold  " + _unit.Gold;
             UpdateHealth();
@@ -150,6 +154,25 @@ namespace RuneArena.UI
             }
             string owner = point.Owner.HasValue ? UiText.TeamName(point.Owner.Value) : "-";
             _controlText.text = point.IsLocked ? "Point locked " + UiText.FormatWhole(point.LockoutRemaining) + "s" : "Point " + owner + " " + Mathf.RoundToInt(point.Progress) + "%";
+        }
+
+        private void UpdateLane()
+        {
+            var lane = GameServices.Lane;
+            if (lane == null || !lane.IsActive)
+            {
+                _laneText.text = "";
+                return;
+            }
+            string wave = "下一波 Next wave " + UiText.FormatWhole(lane.TimeToNextWave) + "s";
+            _laneText.text = wave + "   " + TowerLabel(Team.Blue, lane) + "   " + TowerLabel(Team.Red, lane);
+        }
+
+        private static string TowerLabel(Team team, RuneArena.Match.LaneController lane)
+        {
+            Unit tower = lane.Tower(team);
+            string hp = tower != null ? Mathf.CeilToInt(tower.Health).ToString() : "破坏 destroyed";
+            return UiStyle.Colored(UiText.TeamName(team) + " 塔 " + hp, UiStyle.TeamColor(team));
         }
 
         private void UpdateHealth()

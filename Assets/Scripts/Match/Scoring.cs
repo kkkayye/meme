@@ -9,6 +9,8 @@ namespace RuneArena.Match
     {
         private readonly int[] _kills = new int[2];
         private readonly float[] _capture = new float[2];
+        private readonly int[] _minionKills = new int[2];
+        private readonly float[] _towerDamage = new float[2];
 
         public int Kills(Team team)
         {
@@ -20,10 +22,33 @@ namespace RuneArena.Match
             return _capture[(int)team];
         }
 
-        /// <summary>kills * PointsPerKill + captureSeconds * PointsPerCaptureSecond.</summary>
+        public int MinionKills(Team team)
+        {
+            return _minionKills[(int)team];
+        }
+
+        public float TowerDamage(Team team)
+        {
+            return _towerDamage[(int)team];
+        }
+
+        /// <summary>kills * 100 + capture seconds * 10 + minion kills * 10 + tower damage * 0.05.</summary>
         public float RoundPoints(Team team)
         {
-            return Kills(team) * GameConstants.PointsPerKill + CaptureSeconds(team) * GameConstants.PointsPerCaptureSecond;
+            return Kills(team) * GameConstants.PointsPerKill
+                + CaptureSeconds(team) * GameConstants.PointsPerCaptureSecond
+                + MinionKills(team) * GameConstants.PointsPerMinionKill
+                + TowerDamage(team) * GameConstants.PointsPerTowerDamage;
+        }
+
+        public void RecordMinionKill(Team team)
+        {
+            _minionKills[(int)team]++;
+        }
+
+        public void RecordTowerDamage(Team team, float amount)
+        {
+            if (amount > 0f) _towerDamage[(int)team] += amount;
         }
 
         public void RecordKill(Team team)
@@ -43,6 +68,10 @@ namespace RuneArena.Match
             _kills[1] = 0;
             _capture[0] = 0f;
             _capture[1] = 0f;
+            _minionKills[0] = 0;
+            _minionKills[1] = 0;
+            _towerDamage[0] = 0f;
+            _towerDamage[1] = 0f;
         }
 
         /// <summary>Timeout winner: higher RoundPoints, then higher average current HP%, then GameConstants.TimeoutTieBreakWinner.</summary>

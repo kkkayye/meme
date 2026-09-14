@@ -142,6 +142,14 @@ namespace RuneArena.Core
         Assassin
     }
 
+    /// <summary>What a Unit is: a hero (drafts, shops, scores), a lane minion, or a static tower.</summary>
+    public enum UnitKind
+    {
+        Hero,
+        Minion,
+        Tower
+    }
+
     /// <summary>Runtime status effect types tracked by StatusEffects.</summary>
     public enum StatusType
     {

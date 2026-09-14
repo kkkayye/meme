@@ -10,7 +10,7 @@ namespace RuneArena.Core
         public const string DefaultPlayerHeroId = "blaze";
         public const int RoundsToWin = 3;
         public const int MaxRounds = 5;
-        public const float RoundSeconds = 75f;
+        public const float RoundSeconds = 120f;
         public const float DraftSeconds = 12f;
         public const float ShopSeconds = 12f;
         public const float CountdownSeconds = 3f;
@@ -23,6 +23,48 @@ namespace RuneArena.Core
         // ---- Scoring (section 2) ----
         public const int PointsPerKill = 100;
         public const int PointsPerCaptureSecond = 10;
+        public const int PointsPerMinionKill = 10;
+        public const float PointsPerTowerDamage = 0.05f;
+
+        // ---- Lane: towers (v0.2) ----
+        public const float TowerX = 12f;
+        public const float TowerRadius = 1.2f;
+        public const float TowerHeight = 4f;
+        public const float TowerHealth = 2500f;
+        public const float TowerArmor = 60f;
+        public const float TowerAttackDamage = 100f;
+        public const float TowerAttackSpeed = 0.8f;
+        public const float TowerRange = 7.5f;
+        public const float TowerProjectileSpeed = 30f;
+        /// <summary>Damage bonus per consecutive shot on the same hero (+25%), capped at TowerHeatMax.</summary>
+        public const float TowerHeatPerShot = 0.25f;
+        public const float TowerHeatMax = 1.0f;
+        /// <summary>Seconds a tower keeps targeting a hero that hit an allied hero in its range.</summary>
+        public const float TowerAggroSeconds = 3f;
+        public const float TowerTickInterval = 0.2f;
+
+        // ---- Lane: minions (v0.2) ----
+        public const float MinionFirstWaveDelay = 4f;
+        public const float MinionWaveInterval = 25f;
+        public const int MinionMeleePerWave = 3;
+        public const int MinionRangedPerWave = 1;
+        /// <summary>+10% minion HP and AD per round after the first.</summary>
+        public const float MinionScalingPerRound = 0.10f;
+        public const float MinionTickInterval = 0.15f;
+        public const float MinionAggroRange = 6f;
+        public const float MinionHeroAggroRange = 4f;
+        public const float MinionSpawnSpread = 1.2f;
+        public const float MinionRadius = 0.3f;
+        public const float MinionHeight = 1.2f;
+
+        // ---- Lane economy (v0.2) ----
+        public const int MinionGoldMelee = 20;
+        public const int MinionGoldRanged = 25;
+        /// <summary>Allied heroes near a minion kill get this fraction of its gold.</summary>
+        public const float MinionGoldShareFraction = 0.4f;
+        public const float MinionGoldShareRadius = 8f;
+        /// <summary>Gold to every hero of the team that destroys the enemy tower.</summary>
+        public const int TowerGold = 250;
 
         // ---- Control point (section 2) ----
         public const float ControlPointRadius = 3.0f;

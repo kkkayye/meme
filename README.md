@@ -25,7 +25,11 @@
 | Enter / Space | 商店阶段准备 |
 | Esc | 暂停 |
 
-## 对局流程
+## 对局流程（v0.2：加入小兵与防御塔）
+
+每回合是一条中路的推塔战：双方基地前各一座 **防御塔**（血量 2500，只吃普攻伤害，会优先打小兵、被偷袭时转火英雄并逐发加伤），**小兵**每 25 秒一波（3 近战 + 1 远程，逐回合加强）沿中路推进。补刀给 20/25 金（附近队友分 40%），推掉对面的塔全队 +250 金并 **直接赢下本回合**。团灭和超时规则不变，回合时长 120 秒。
+
+
 
 `主菜单 → 选英雄 → 符文抽选(12s) → 商店(12s) → 倒计时(3s) → 战斗(75s) → 回合结算 → …`，先赢 3 回合者胜。
 战斗中：中央控制点（占满给金币并刷宝箱）、每 20 秒随机刷宝箱（站 1 秒开箱，每第 4 个箱子保底史诗+）。
@@ -37,11 +41,11 @@
 | 目录 | 内容 |
 |---|---|
 | Core | 枚举、定义（英雄/技能/符文/装备）、StatBlock、DamageInfo、EventBus、Rng、GameServices、GameConstants（所有数值） |
-| Content | HeroCatalog / SkillBook（15 个技能）、RuneCatalog + RuneHooks（32 符文）、ItemCatalog + ItemHooks（18 装备）、LootTables |
+| Content | HeroCatalog / SkillBook（15 个技能）、MinionCatalog（小兵、防御塔）、RuneCatalog + RuneHooks（32 符文）、ItemCatalog + ItemHooks（18 装备）、LootTables |
 | Combat | Unit、DamagePipeline、CombatWorld、SkillCaster（前摇/后摇/输入缓冲/充能）、SkillExecutor（10 种技能形状）、Projectile、Telegraphs、UnitMotor、UnitVisuals |
 | Runes / Items / Loot | 抽选服务、符文背包与套装、商店与背包、宝箱与掉落 |
-| Match | Bootstrap、GameRoot、MatchController + MatchPhaseRunner（状态机）、Arena、ControlPoint、Economy、Scoring、TeamSpawner |
-| Player / AI | 玩家输入与相机；机器人状态机（追击/战斗/撤退/占点/捡箱）与技能选择 |
+| Match | Bootstrap、GameRoot、MatchController + MatchPhaseRunner（状态机）、Arena、ControlPoint、LaneController（塔与兵线）、Economy、Scoring、TeamSpawner |
+| Player / AI | 玩家输入与相机；英雄机器人（追击/战斗/撤退/占点/捡箱/推塔）、小兵 AI、防御塔 AI、共享避障 |
 | UI | 纯代码 uGUI：HUD、技能栏、头顶血条、飘字、抽选面板、商店面板、菜单、开箱翻牌 |
 | Juice | 顿帧、震屏、闪白、挤压拉伸、粒子、合成音效 |
 

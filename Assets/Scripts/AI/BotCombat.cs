@@ -45,6 +45,8 @@ namespace RuneArena.AI
         {
             SkillDefinition skill = self.Caster.GetSkill(key);
             if (skill == null || !self.Caster.IsReady(key)) return false;
+            bool selfOnly = skill.AiHint == AiHint.Defensive || skill.AiHint == AiHint.Escape;
+            if (!target.IsHero && !selfOnly) return false;
             Vector3 toTarget = target.Position - self.Position;
             float attackRange = self.Stats.Get(StatType.AttackRange);
             bool inDanger = self.HealthFraction < GameConstants.BotDefensiveHealthFraction && distance <= GameConstants.BotDefensiveEnemyRange;
@@ -77,7 +79,12 @@ namespace RuneArena.AI
             if (GameServices.World == null) return false;
             Buffer.Clear();
             GameServices.World.EnemiesInRadius(self.Position, Mathf.Max(skill.Radius, reach), self.Team, Buffer);
-            return Buffer.Count >= GameConstants.BotUltEnemyCount;
+            int heroes = 0;
+            for (int i = 0; i < Buffer.Count; i++)
+            {
+                if (Buffer[i].IsHero) heroes++;
+            }
+            return heroes >= GameConstants.BotUltEnemyCount;
         }
 
         /// <summary>Distance within which a skill can reach a target: melee/cone use Range, ground circles Range, self circles Radius.</summary>

@@ -21,6 +21,16 @@ namespace RuneArena.Tests.EditMode
             return unit;
         }
 
+        /// <summary>Creates a unit from an explicit definition (minions, towers).</summary>
+        public Unit CreateDefinition(HeroDefinition definition, Team team)
+        {
+            var go = new GameObject("TestUnit_" + definition.Id);
+            _objects.Add(go);
+            Unit unit = go.AddComponent<Unit>();
+            unit.Setup(definition, team, false, definition.Name);
+            return unit;
+        }
+
         public void Cleanup()
         {
             for (int i = 0; i < _objects.Count; i++)

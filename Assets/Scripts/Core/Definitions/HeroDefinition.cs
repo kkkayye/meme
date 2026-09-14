@@ -14,6 +14,13 @@ namespace RuneArena.Core
         public string Description { get; init; } = "";
         public HeroArchetype Archetype { get; init; } = HeroArchetype.Mage;
         public Color Color { get; init; } = Color.white;
+        /// <summary>Hero (default), lane Minion or static Tower. Minions and towers reuse the Unit/combat pipeline but never draft, shop or score.</summary>
+        public UnitKind Kind { get; init; } = UnitKind.Hero;
+        /// <summary>Body capsule radius used by hit queries and the controller.</summary>
+        public float BodyRadius { get; init; } = GameConstants.HeroRadius;
+        public float BodyHeight { get; init; } = GameConstants.HeroHeight;
+
+        public bool IsHero => Kind == UnitKind.Hero;
         /// <summary>Base values for every StatType the hero has. Missing stats default to 0 (CritDamage defaults to 1.75 in StatBlock).</summary>
         public IReadOnlyDictionary<StatType, float> BaseStats { get; init; } = new Dictionary<StatType, float>();
         public SkillDefinition BasicAttack { get; init; }

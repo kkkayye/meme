@@ -25,6 +25,7 @@ namespace RuneArena.Core
         public static Arena Arena { get; set; }
         public static Scoring Scoring { get; set; }
         public static ControlPoint ControlPoint { get; set; }
+        public static LaneController Lane { get; set; }
 
         /// <summary>True once a match populated the core services (Rng, World, Config).</summary>
         public static bool IsReady => Rng != null && World != null && Config != null;
@@ -53,6 +54,7 @@ namespace RuneArena.Core
             Arena = null;
             Scoring = null;
             ControlPoint = null;
+            Lane = null;
         }
     }
 }

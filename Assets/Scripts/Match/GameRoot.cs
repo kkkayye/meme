@@ -20,6 +20,7 @@ namespace RuneArena.Match
         public Arena Arena { get; private set; }
         public ControlPoint ControlPoint { get; private set; }
         public ChestSpawner Chests { get; private set; }
+        public LaneController Lane { get; private set; }
         public PlayerCamera PlayerCamera { get; private set; }
         public PlayerInput PlayerInput { get; private set; }
         public bool IsSetUp { get; private set; }
@@ -49,9 +50,10 @@ namespace RuneArena.Match
             Arena = CreateChild<Arena>("Arena");
             ControlPoint = CreateChild<ControlPoint>("ControlPoint");
             Chests = CreateChild<ChestSpawner>("Chests");
+            Lane = CreateChild<LaneController>("LaneObjectives");
             PlayerInput = gameObject.AddComponent<PlayerInput>();
             Match = gameObject.AddComponent<MatchController>();
-            Match.Initialize(Ui, Juice, Arena, ControlPoint, Chests, PlayerCamera, PlayerInput);
+            Match.Initialize(Ui, Juice, Arena, ControlPoint, Chests, Lane, PlayerCamera, PlayerInput);
             Match.ShowMenu();
         }
 

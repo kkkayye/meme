@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using RuneArena.Combat;
 using RuneArena.Core;
 using RuneArena.Loot;
@@ -7,17 +6,21 @@ using UnityEngine;
 
 namespace RuneArena.AI
 {
-    /// <summary>Bot FSM (Seek / Fight / Retreat / Capture / Loot) evaluated every 0.1 s; drives UnitMotor and SkillCaster like a player would.</summary>
+    /// <summary>Hero bot FSM (Seek / Fight / Retreat / Capture / Loot / Push) evaluated every 0.1 s; drives UnitMotor and SkillCaster like a player would. Fights heroes first, farms minions, pushes the tower behind its wave and backs off when a tower would shoot it alone.</summary>
     public sealed class BotBrain : MonoBehaviour
     {
-        public enum BotState { Seek, Fight, Retreat, Capture, Loot }
+        public enum BotState { Seek, Fight, Retreat, Capture, Loot, Push }
 
         private const float RangedThreshold = 3f;
         private const float StrafeFlipSeconds = 1.2f;
         private const float KiteFraction = 0.6f;
-        private const float ProbeDistance = 1.4f;
+        private const float HeroEngageRange = 9f;
+        private const float MinionFarmRange = 12f;
+        private const float TowerSafetyMargin = 1.5f;
+        private const float MinionsNearTowerRange = 6f;
+        private const float DiveTowerHealthFraction = 0.25f;
+        private const float DiveHealthFraction = 0.45f;
 
-        private readonly List<Unit> _buffer = new List<Unit>();
         private float _tickTimer;
         private float _clock;
         private float _retreatUntil;
@@ -28,6 +31,7 @@ namespace RuneArena.AI
         private Vector3 _moveDir;
         private Vector3 _faceDir;
         private Chest _lootTarget;
+        private Unit _towerThreat;
         private Rng _rng;
 
         public Unit Owner { get; private set; }
@@ -35,9 +39,10 @@ namespace RuneArena.AI
         public BotState State { get; private set; } = BotState.Seek;
         /// <summary>Current FSM state name for debugging / overhead labels.</summary>
         public string StateName => State.ToString();
-        /// <summary>Current attack target, or null.</summary>
+        /// <summary>Current attack target (hero, minion or tower), or null.</summary>
         public Unit Target { get; private set; }
         public bool IsRanged => Owner != null && Owner.Stats.Get(StatType.AttackRange) > RangedThreshold;
+        private Team EnemyTeam => Owner.Team == Team.Blue ? Team.Red : Team.Blue;
 
         /// <summary>Adds (or returns the existing) BotBrain on the unit and binds it.</summary>
         public static BotBrain Attach(Unit unit)
@@ -97,84 +102,148 @@ namespace RuneArena.AI
         {
             CombatWorld world = GameServices.World;
             if (world == null) return;
-            UpdateTarget(world.NearestEnemy(Owner, float.MaxValue));
-            float enemyDist = Target != null ? FlatDistance(Owner.Position, Target.Position) : float.MaxValue;
-            if (ShouldRetreat(enemyDist)) State = BotState.Retreat;
-            else if (_clock < _retreatUntil && State == BotState.Retreat) State = BotState.Retreat;
-            else if (TryPickLoot(world, enemyDist)) State = BotState.Loot;
-            else if (ShouldCapture(enemyDist)) State = BotState.Capture;
-            else State = Target != null ? BotState.Fight : BotState.Seek;
-            Steer(enemyDist);
-            if (Target != null) BotCombat.TryAct(this, Target, enemyDist);
+            Unit hero = world.NearestEnemyOfKind(Owner.Position, Owner.Team, UnitKind.Hero, float.MaxValue);
+            float heroDist = hero != null ? Steering.FlatDistance(Owner.Position, hero.Position) : float.MaxValue;
+            _towerThreat = TowerThreat(world);
+            UpdateHeroTarget(hero, heroDist);
+            State = ChooseState(world, heroDist);
+            Steer(world, heroDist);
+            float targetDist = Target != null ? Steering.FlatDistance(Owner.Position, Target.Position) - Target.BodyRadius + GameConstants.HeroRadius : float.MaxValue;
+            if (Target != null && State != BotState.Retreat) BotCombat.TryAct(this, Target, targetDist);
         }
 
-        private void UpdateTarget(Unit nearest)
+        /// <summary>Heroes are engaged with a reaction delay; minions and towers are picked instantly when no hero is close.</summary>
+        private void UpdateHeroTarget(Unit hero, float heroDist)
         {
             if (Target != null && (!Target.IsAlive || Target.IsInvisible)) Target = null;
-            if (nearest == null || ReferenceEquals(nearest, Target)) return;
-            if (Target == null)
+            if (hero != null && heroDist <= HeroEngageRange)
             {
-                Target = nearest;
+                if (Target != null && Target.IsHero && ReferenceEquals(Target, hero)) return;
+                if (Target == null || !Target.IsHero)
+                {
+                    Target = hero;
+                    return;
+                }
+                if (!ReferenceEquals(hero, _pendingTarget))
+                {
+                    _pendingTarget = hero;
+                    _targetSwitchAt = _clock + GameConstants.BotReactionDelay;
+                    return;
+                }
+                if (_clock >= _targetSwitchAt) Target = hero;
                 return;
             }
-            if (!ReferenceEquals(nearest, _pendingTarget))
-            {
-                _pendingTarget = nearest;
-                _targetSwitchAt = _clock + GameConstants.BotReactionDelay;
-                return;
-            }
-            if (_clock >= _targetSwitchAt) Target = nearest;
+            if (Target != null && Target.IsHero) Target = null;
         }
 
-        private bool ShouldRetreat(float enemyDist)
+        private BotState ChooseState(CombatWorld world, float heroDist)
         {
-            if (Owner.HealthFraction >= GameConstants.BotRetreatHealthFraction) return false;
-            if (enemyDist > GameConstants.BotDefensiveEnemyRange * 2f) return false;
-            if (BotCombat.HasReadyDefensive(Owner)) return false;
-            if (State != BotState.Retreat) _retreatUntil = _clock + GameConstants.BotRetreatSeconds;
+            if (ShouldRetreat(heroDist)) return BotState.Retreat;
+            if (_clock < _retreatUntil && State == BotState.Retreat) return BotState.Retreat;
+            if (Target != null && Target.IsHero) return BotState.Fight;
+            if (TryPickLoot(world, heroDist)) return BotState.Loot;
+            if (ShouldCapture(heroDist)) return BotState.Capture;
+            Unit minion = world.NearestEnemyOfKind(Owner.Position, Owner.Team, UnitKind.Minion, MinionFarmRange);
+            if (minion != null)
+            {
+                Target = minion;
+                return BotState.Fight;
+            }
+            Unit tower = world.TowerOf(EnemyTeam);
+            if (tower != null && CanPushTower(world, tower))
+            {
+                Target = tower;
+                return BotState.Push;
+            }
+            Target = null;
+            return BotState.Seek;
+        }
+
+        private bool ShouldRetreat(float heroDist)
+        {
+            bool lowHealth = Owner.HealthFraction < GameConstants.BotRetreatHealthFraction && heroDist <= GameConstants.BotDefensiveEnemyRange * 2f && !BotCombat.HasReadyDefensive(Owner);
+            bool towerDanger = _towerThreat != null && !SafeUnderTower(GameServices.World, _towerThreat);
+            if (!lowHealth && !towerDanger) return false;
+            if (State != BotState.Retreat) _retreatUntil = _clock + (towerDanger ? 0.5f : GameConstants.BotRetreatSeconds);
             return true;
         }
 
-        private bool TryPickLoot(CombatWorld world, float enemyDist)
+        /// <summary>The enemy tower if this bot stands inside its firing range.</summary>
+        private Unit TowerThreat(CombatWorld world)
         {
-            if (enemyDist < GameConstants.BotLootNoEnemyRange) return false;
+            Unit tower = world.TowerOf(EnemyTeam);
+            if (tower == null) return null;
+            float range = tower.Stats.Get(StatType.AttackRange) + Owner.BodyRadius + TowerSafetyMargin;
+            return Steering.FlatDistance(Owner.Position, tower.Position) <= range ? tower : null;
+        }
+
+        /// <summary>Standing under the enemy tower is fine when allied minions tank it (and we are healthy) or the tower is nearly dead.</summary>
+        private bool SafeUnderTower(CombatWorld world, Unit tower)
+        {
+            if (world == null || tower == null) return true;
+            if (tower.HealthFraction < DiveTowerHealthFraction) return true;
+            if (Owner.HealthFraction < DiveHealthFraction) return false;
+            return AlliedMinionsNear(world, tower.Position) > 0;
+        }
+
+        private bool CanPushTower(CombatWorld world, Unit tower)
+        {
+            return tower.HealthFraction < DiveTowerHealthFraction || AlliedMinionsNear(world, tower.Position) > 0;
+        }
+
+        private int AlliedMinionsNear(CombatWorld world, Vector3 point)
+        {
+            int count = 0;
+            foreach (Unit ally in world.AlliesOf(Owner.Team))
+            {
+                if (ally.IsMinion && Steering.FlatDistance(ally.Position, point) <= MinionsNearTowerRange) count++;
+            }
+            return count;
+        }
+
+        private bool TryPickLoot(CombatWorld world, float heroDist)
+        {
+            if (heroDist < GameConstants.BotLootNoEnemyRange) return false;
             _lootTarget = world.NearestChest(Owner.Position, GameConstants.BotLootChestRange);
             return _lootTarget != null;
         }
 
-        private bool ShouldCapture(float enemyDist)
+        private bool ShouldCapture(float heroDist)
         {
             ControlPoint point = GameServices.ControlPoint;
             if (point == null || point.IsLocked) return false;
-            if (enemyDist < GameConstants.BotCaptureNoEnemyRange) return false;
-            return true;
+            if (heroDist < GameConstants.BotCaptureNoEnemyRange) return false;
+            return point.Owner != Owner.Team || point.Progress < GameConstants.CaptureProgressMax;
         }
 
-        private void Steer(float enemyDist)
+        private void Steer(CombatWorld world, float heroDist)
         {
             Vector3 desired = Vector3.zero;
             _faceDir = Vector3.zero;
             switch (State)
             {
                 case BotState.Retreat: desired = RetreatDirection(); break;
-                case BotState.Loot: desired = Toward(_lootTarget != null ? _lootTarget.Position : Owner.Position, 0.3f); break;
-                case BotState.Capture: desired = Toward(GameServices.ControlPoint != null ? GameServices.ControlPoint.Center : Vector3.zero, 1.2f); break;
-                case BotState.Fight: desired = FightDirection(enemyDist); break;
-                default: desired = Target != null ? Toward(Target.Position, 1f) : Toward(GameServices.ControlPoint != null ? GameServices.ControlPoint.Center : Vector3.zero, 1.5f); break;
+                case BotState.Loot: desired = Steering.Toward(Owner, _lootTarget != null ? _lootTarget.Position : Owner.Position, 0.3f); break;
+                case BotState.Capture: desired = Steering.Toward(Owner, GameServices.ControlPoint != null ? GameServices.ControlPoint.Center : Vector3.zero, 1.2f); break;
+                case BotState.Fight:
+                case BotState.Push: desired = FightDirection(); break;
+                default: desired = SeekDirection(world); break;
             }
             if (Target != null && State != BotState.Retreat) _faceDir = Target.Position - Owner.Position;
             else if (desired.sqrMagnitude > 1e-4f) _faceDir = desired;
-            _moveDir = Avoid(desired);
+            _moveDir = Steering.Avoid(Owner, desired);
         }
 
-        private Vector3 FightDirection(float dist)
+        private Vector3 FightDirection()
         {
             if (Target == null) return Vector3.zero;
-            float range = Owner.Stats.Get(StatType.AttackRange);
+            float range = Owner.Stats.Get(StatType.AttackRange) + Target.BodyRadius;
             float preferred = IsRanged ? range * GameConstants.BotRangedStopFactor : range * 0.9f;
             Vector3 to = Target.Position - Owner.Position;
             to.y = 0f;
+            float dist = to.magnitude;
             if (dist > preferred) return to.normalized;
+            if (!Target.IsHero) return Vector3.zero;
             if (IsRanged && dist < preferred * KiteFraction) return -to.normalized;
             if (_clock >= _strafeFlipAt)
             {
@@ -184,50 +253,30 @@ namespace RuneArena.AI
             return Vector3.Cross(Vector3.up, to.normalized) * _strafeSign;
         }
 
+        /// <summary>No targets: walk with the wave toward the enemy tower, but hold outside its range when no allied minions are there.</summary>
+        private Vector3 SeekDirection(CombatWorld world)
+        {
+            Unit tower = world.TowerOf(EnemyTeam);
+            Vector3 goal = GameServices.ControlPoint != null ? GameServices.ControlPoint.Center : Vector3.zero;
+            float stop = 1.5f;
+            if (tower != null)
+            {
+                goal = tower.Position;
+                stop = tower.Stats.Get(StatType.AttackRange) + Owner.BodyRadius + TowerSafetyMargin + 1f;
+                if (AlliedMinionsNear(world, tower.Position) > 0) stop = 3f;
+            }
+            return Steering.Toward(Owner, goal, stop);
+        }
+
         private Vector3 RetreatDirection()
         {
             Vector3 away = Vector3.zero;
-            if (Target != null) away = Owner.Position - Target.Position;
+            if (_towerThreat != null) away = Owner.Position - _towerThreat.Position;
+            else if (Target != null) away = Owner.Position - Target.Position;
             Vector3 home = GameServices.Arena != null ? GameServices.Arena.BasePosition(Owner.Team) - Owner.Position : Vector3.zero;
             Vector3 dir = away.normalized + home.normalized * 0.5f;
             dir.y = 0f;
             return dir.sqrMagnitude > 1e-4f ? dir.normalized : Vector3.zero;
-        }
-
-        private Vector3 Toward(Vector3 point, float stopDistance)
-        {
-            Vector3 to = point - Owner.Position;
-            to.y = 0f;
-            return to.magnitude <= stopDistance ? Vector3.zero : to.normalized;
-        }
-
-        /// <summary>Samples straight / ±45° / ±90° against the obstacle layer and returns the first free direction.</summary>
-        private Vector3 Avoid(Vector3 dir)
-        {
-            if (dir.sqrMagnitude < 1e-4f) return dir;
-            if (IsFree(dir)) return dir;
-            float a = GameConstants.BotAvoidanceAngle;
-            float[] angles = { a, -a, a * 2f, -a * 2f };
-            for (int i = 0; i < angles.Length; i++)
-            {
-                Vector3 candidate = Quaternion.Euler(0f, angles[i], 0f) * dir;
-                if (IsFree(candidate)) return candidate;
-            }
-            return Vector3.zero;
-        }
-
-        private bool IsFree(Vector3 dir)
-        {
-            Vector3 probe = Owner.Position + dir.normalized * ProbeDistance;
-            if (GameServices.World != null && !GameServices.World.IsWalkable(probe)) return false;
-            Vector3 bottom = probe + Vector3.up * 0.6f;
-            Vector3 top = probe + Vector3.up * 1.4f;
-            return !Physics.CheckCapsule(bottom, top, GameConstants.HeroRadius * 0.9f, Arena.ObstacleMask, QueryTriggerInteraction.Ignore);
-        }
-
-        private static float FlatDistance(Vector3 a, Vector3 b)
-        {
-            return Mathf.Sqrt(CombatWorld.FlatSqrDistance(a, b));
         }
     }
 }

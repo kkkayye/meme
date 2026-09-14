@@ -14,6 +14,7 @@ namespace RuneArena.Combat
             Unit target = info.Target;
             if (target == null) throw new ArgumentException("DamageInfo.Target is null.", nameof(info));
             if (!target.IsAlive || info.Amount <= 0f) return DamageResult.None;
+            if (target.IsTower && info.Tag != DamageTag.Basic) return DamageResult.None;
 
             float mitigated = MitigateByArmor(info.Amount, info.Type, target.Stats.Get(StatType.Armor));
             mitigated *= 1f - Mathf.Clamp01(target.Status.GetDamageReduction());
@@ -30,6 +31,7 @@ namespace RuneArena.Combat
             }
 
             var result = new DamageResult(dealt, absorbed, killed);
+            if (target.IsTower && info.Source != null) GameServices.Scoring?.RecordTowerDamage(info.Source.Team, result.Total);
             ApplyLifesteal(info, result);
             PublishHitEvents(info, result);
             if (guardId != null) EventBus.Publish(new LethalDamagePrevented(target, guardId));

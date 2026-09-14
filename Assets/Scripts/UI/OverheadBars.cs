@@ -46,8 +46,10 @@ namespace RuneArena.UI
         {
             var go = new GameObject("OverheadBar", typeof(RectTransform));
             go.transform.SetParent(unit.transform, false);
-            go.transform.localPosition = new Vector3(0f, Height, 0f);
-            go.transform.localScale = Vector3.one * CanvasScale;
+            float height = unit.IsTower ? unit.BodyHeight + 1.2f : (unit.IsMinion ? unit.BodyHeight + 0.5f : Height);
+            float scale = unit.IsTower ? CanvasScale * 1.6f : (unit.IsMinion ? CanvasScale * 0.55f : CanvasScale);
+            go.transform.localPosition = new Vector3(0f, height, 0f);
+            go.transform.localScale = Vector3.one * scale;
             var bar = go.AddComponent<OverheadBar>();
             bar._unit = unit;
             bar.Build();
@@ -61,6 +63,7 @@ namespace RuneArena.UI
             ((RectTransform)transform).sizeDelta = Size;
             _name = UiFactory.OutlinedText(transform, "Name", _unit.UnitName, 26, UiStyle.TextMain, TextAnchor.MiddleCenter);
             UiFactory.Place(_name.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(220f, 30f));
+            if (_unit.IsMinion) _name.enabled = false;
             _hp = UiFactory.Bar(transform, "Hp", UiStyle.HealthBg, UiStyle.HealthAlly, new Vector2(180f, 16f));
             RectTransform hpRect = (RectTransform)_hp.transform.parent;
             UiFactory.Place(hpRect, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 4f), new Vector2(180f, 16f));

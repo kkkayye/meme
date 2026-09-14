@@ -106,7 +106,7 @@ namespace RuneArena.Match
             for (int i = 0; i < units.Count; i++)
             {
                 Unit u = units[i];
-                if (!u.IsAlive || !IsInside(u.Position)) continue;
+                if (!u.IsAlive || !u.IsHero || !IsInside(u.Position)) continue;
                 if (u.Team == Team.Blue) blue = true;
                 else red = true;
             }

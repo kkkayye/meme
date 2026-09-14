@@ -121,7 +121,7 @@ namespace RuneArena.Loot
             for (int i = 0; i < units.Count; i++)
             {
                 Unit u = units[i];
-                if (!u.IsAlive || !InRange(u)) continue;
+                if (!u.IsAlive || !u.IsHero || !InRange(u)) continue;
                 float sqr = CombatWorld.FlatSqrDistance(u.Position, transform.position);
                 if (sqr >= bestSqr) continue;
                 bestSqr = sqr;

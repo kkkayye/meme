@@ -60,7 +60,7 @@ namespace RuneArena.Combat
         public StatusInstance Apply(StatusType type, float magnitude, float duration, string sourceId = null, Unit source = null)
         {
             if (Owner == null) Owner = GetComponent<Unit>();
-            if (Owner != null && !Owner.IsAlive) return null;
+            if (Owner != null && (!Owner.IsAlive || Owner.IsStatic)) return null;
             if (IsCrowdControl(type)) duration *= Mathf.Max(0f, CrowdControlDurationMultiplier);
             if (duration <= 0f && type != StatusType.Burn) return null;
             var instance = new StatusInstance(type, magnitude, duration, sourceId, source);

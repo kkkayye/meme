@@ -46,7 +46,7 @@ namespace RuneArena.Runes
         /// <summary>Creates offers for every unit in GameServices.World (dead units included; everyone drafts between rounds).</summary>
         public void BeginDraft(int round)
         {
-            IReadOnlyList<Unit> units = GameServices.World != null ? GameServices.World.Units : (IReadOnlyList<Unit>)Array.Empty<Unit>();
+            IReadOnlyList<Unit> units = GameServices.World != null ? GameServices.World.AllHeroes() : (IReadOnlyList<Unit>)Array.Empty<Unit>();
             BeginDraft(round, units);
         }
 

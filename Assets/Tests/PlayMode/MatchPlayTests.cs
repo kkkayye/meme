@@ -58,6 +58,28 @@ namespace RuneArena.Tests.PlayMode
 
         [UnityTest]
         [Timeout(120000)]
+        public IEnumerator Lane_TowersAndMinionsSpawnDuringCombat()
+        {
+            GameRoot root = Bootstrap.EnsureRoot();
+            yield return null;
+            root.Match.StartMatch(new MatchConfig { TeamSize = 1, Seed = 42, HumanPlayer = false });
+            Time.timeScale = 8f;
+            float started = Time.realtimeSinceStartup;
+            while (root.Match.Phase != MatchPhase.Combat && Time.realtimeSinceStartup - started < 60f) yield return null;
+            Assert.AreEqual(MatchPhase.Combat, root.Match.Phase, "match never reached combat");
+            Assert.IsNotNull(GameServices.World.TowerOf(Team.Blue), "blue tower missing");
+            Assert.IsNotNull(GameServices.World.TowerOf(Team.Red), "red tower missing");
+            float combatStarted = Time.realtimeSinceStartup;
+            while (GameServices.Lane.Wave < 1 && Time.realtimeSinceStartup - combatStarted < 30f) yield return null;
+            Assert.GreaterOrEqual(GameServices.Lane.Wave, 1, "first minion wave never spawned");
+            Assert.AreEqual(GameConstants.MinionMeleePerWave + GameConstants.MinionRangedPerWave, GameServices.World.CountAliveOfKind(Team.Blue, UnitKind.Minion));
+            yield return new WaitForSeconds(6f);
+            Assert.AreEqual(MatchPhase.Combat, root.Match.Phase, "minions must not end the round by themselves");
+            Time.timeScale = 1f;
+        }
+
+        [UnityTest]
+        [Timeout(120000)]
         public IEnumerator EveryHero_CanCastEverySkill()
         {
             Bootstrap.EnsureRoot();

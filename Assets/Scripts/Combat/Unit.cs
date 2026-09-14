@@ -29,6 +29,19 @@ namespace RuneArena.Combat
         public Vector3 SpawnPosition { get; private set; }
         /// <summary>Set false to pause passive HealthRegen (regen only runs during MatchPhase.Combat anyway).</summary>
         public bool RegenEnabled { get; set; } = true;
+        /// <summary>Hero, Minion or Tower (from the definition).</summary>
+        public UnitKind Kind { get; private set; } = UnitKind.Hero;
+        /// <summary>Body capsule radius used by hit queries.</summary>
+        public float BodyRadius { get; private set; } = GameConstants.HeroRadius;
+        public float BodyHeight { get; private set; } = GameConstants.HeroHeight;
+        /// <summary>Static collider used instead of a CharacterController for towers.</summary>
+        public Collider StaticCollider { get; private set; }
+
+        public bool IsHero => Kind == UnitKind.Hero;
+        public bool IsMinion => Kind == UnitKind.Minion;
+        public bool IsTower => Kind == UnitKind.Tower;
+        /// <summary>Towers never move, are never displaced and ignore statuses.</summary>
+        public bool IsStatic => Kind == UnitKind.Tower;
 
         public CharacterController Controller { get; private set; }
         public UnitMotor Motor { get; private set; }
@@ -72,11 +85,15 @@ namespace RuneArena.Combat
             UnitName = string.IsNullOrEmpty(name) ? hero.Name : name;
             gameObject.name = "Unit_" + UnitName;
             PhysicsSetup.Ensure();
-            gameObject.layer = GameConstants.UnitLayer;
+            Kind = hero.Kind;
+            BodyRadius = Mathf.Max(0.1f, hero.BodyRadius);
+            BodyHeight = Mathf.Max(0.2f, hero.BodyHeight);
+            gameObject.layer = IsStatic ? GameConstants.ObstacleLayer : GameConstants.UnitLayer;
             Stats = StatBlock.FromHero(hero);
             _lastMaxHealth = Stats.Get(StatType.MaxHealth);
             Stats.Changed += OnStatsChanged;
-            EnsureController();
+            if (IsStatic) EnsureStaticCollider();
+            else EnsureController();
             Status = GetOrAdd<StatusEffects>();
             Shields = GetOrAdd<Shields>();
             Motor = GetOrAdd<UnitMotor>();
@@ -123,13 +140,14 @@ namespace RuneArena.Combat
             Health = 0f;
             IsAlive = false;
             Deaths++;
-            if (killer != null && !ReferenceEquals(killer, this)) killer.Kills++;
+            if (killer != null && !ReferenceEquals(killer, this) && IsHero) killer.Kills++;
             Status.Clear();
             Shields.Clear();
             Caster.CancelCast();
             Motor.CancelDash();
             Motor.Locked = true;
             if (Controller != null) Controller.enabled = false;
+            DisableStaticObstacle();
             Visuals.SetDead(true);
             EventBus.Publish(new UnitDied(this, killer));
         }
@@ -228,6 +246,7 @@ namespace RuneArena.Combat
         private void OnDestroy()
         {
             if (Stats != null) Stats.Changed -= OnStatsChanged;
+            DisableStaticObstacle();
             GameServices.World?.Unregister(this);
         }
 
@@ -244,9 +263,29 @@ namespace RuneArena.Combat
         {
             Controller = GetComponent<CharacterController>();
             if (Controller == null) Controller = gameObject.AddComponent<CharacterController>();
-            Controller.radius = GameConstants.HeroRadius;
-            Controller.height = GameConstants.HeroHeight;
-            Controller.center = new Vector3(0f, GameConstants.HeroHeight * 0.5f, 0f);
+            Controller.radius = BodyRadius;
+            Controller.height = BodyHeight;
+            Controller.center = new Vector3(0f, BodyHeight * 0.5f, 0f);
+        }
+
+        /// <summary>Towers: a capsule collider on the obstacle layer plus a walkability block in the Arena.</summary>
+        private void EnsureStaticCollider()
+        {
+            CapsuleCollider capsule = GetComponent<CapsuleCollider>();
+            if (capsule == null) capsule = gameObject.AddComponent<CapsuleCollider>();
+            capsule.radius = BodyRadius;
+            capsule.height = BodyHeight;
+            capsule.center = new Vector3(0f, BodyHeight * 0.5f, 0f);
+            StaticCollider = capsule;
+            var bounds = new Bounds(transform.position + new Vector3(0f, BodyHeight * 0.5f, 0f), new Vector3(BodyRadius * 2f, BodyHeight, BodyRadius * 2f));
+            GameServices.Arena?.AddDynamicObstacle(this, bounds);
+        }
+
+        private void DisableStaticObstacle()
+        {
+            if (!IsStatic) return;
+            if (StaticCollider != null) StaticCollider.enabled = false;
+            GameServices.Arena?.RemoveDynamicObstacle(this);
         }
 
         private T GetOrAdd<T>() where T : Component

@@ -32,12 +32,14 @@ namespace RuneArena.Match
         {
             new PillarSpec(-7f, 6f, 2f, 2f), new PillarSpec(7f, 6f, 2f, 2f),
             new PillarSpec(-7f, -6f, 2f, 2f), new PillarSpec(7f, -6f, 2f, 2f),
-            new PillarSpec(-13f, 0f, 1.5f, 3.5f), new PillarSpec(13f, 0f, 1.5f, 3.5f),
+            new PillarSpec(-13f, 6.5f, 1.5f, 2.5f), new PillarSpec(13f, 6.5f, 1.5f, 2.5f),
+            new PillarSpec(-13f, -6.5f, 1.5f, 2.5f), new PillarSpec(13f, -6.5f, 1.5f, 2.5f),
             new PillarSpec(0f, 9.5f, 4f, 1.5f), new PillarSpec(0f, -9.5f, 4f, 1.5f)
         };
 
         private readonly List<Collider> _obstacles = new List<Collider>();
         private readonly List<Bounds> _obstacleBounds = new List<Bounds>();
+        private readonly Dictionary<object, Bounds> _dynamicObstacles = new Dictionary<object, Bounds>();
         private readonly List<Material> _materials = new List<Material>();
         private Transform _root;
 
@@ -71,6 +73,7 @@ namespace RuneArena.Match
             _root = null;
             _obstacles.Clear();
             _obstacleBounds.Clear();
+            _dynamicObstacles.Clear();
             for (int i = 0; i < _materials.Count; i++)
             {
                 PrimitiveFactory.SafeDestroy(_materials[i]);
@@ -92,7 +95,47 @@ namespace RuneArena.Match
                 b.Expand(pad * 2f);
                 if (b.Contains(probe)) return false;
             }
+            foreach (KeyValuePair<object, Bounds> pair in _dynamicObstacles)
+            {
+                Bounds b = pair.Value;
+                b.Expand(pad * 2f);
+                if (b.Contains(probe)) return false;
+            }
             return true;
+        }
+
+        /// <summary>Registers a runtime obstacle (a tower) for walkability queries.</summary>
+        public void AddDynamicObstacle(object key, Bounds bounds)
+        {
+            if (key == null) return;
+            _dynamicObstacles[key] = bounds;
+        }
+
+        public void RemoveDynamicObstacle(object key)
+        {
+            if (key == null) return;
+            _dynamicObstacles.Remove(key);
+        }
+
+        /// <summary>Lane direction a team pushes in: Blue toward +X, Red toward -X.</summary>
+        public static Vector3 LaneDirection(Team team)
+        {
+            return team == Team.Blue ? Vector3.right : Vector3.left;
+        }
+
+        /// <summary>Position of a team's tower (in front of its base on the lane).</summary>
+        public Vector3 TowerPosition(Team team)
+        {
+            float x = team == Team.Blue ? -GameConstants.TowerX : GameConstants.TowerX;
+            return new Vector3(Center.x + x, 0f, Center.z);
+        }
+
+        /// <summary>Spawn point for the i-th minion of a wave: just in front of the base, spread on Z.</summary>
+        public Vector3 MinionSpawnPoint(Team team, int index, int count)
+        {
+            Vector3 b = BasePosition(team) + LaneDirection(team) * 2.5f;
+            float z = (index - (count - 1) * 0.5f) * GameConstants.MinionSpawnSpread;
+            return new Vector3(b.x, 0f, b.z + z);
         }
 
         /// <summary>Clamps to the floor bounds (hero radius padding) with y = 0.</summary>

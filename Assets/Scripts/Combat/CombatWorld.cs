@@ -78,12 +78,13 @@ namespace RuneArena.Combat
             }
         }
 
+        /// <summary>Living HEROES of a team (minions and towers never count toward wipes).</summary>
         public int CountAlive(Team team)
         {
             int count = 0;
             for (int i = 0; i < _units.Count; i++)
             {
-                if (_units[i].Team == team && _units[i].IsAlive) count++;
+                if (_units[i].Team == team && _units[i].IsAlive && _units[i].IsHero) count++;
             }
             return count;
         }
@@ -93,14 +94,66 @@ namespace RuneArena.Combat
             return CountAlive(team) > 0;
         }
 
-        /// <summary>Average current HP fraction of a team (dead units count as 0). Used for the timeout tie-break.</summary>
+        /// <summary>Living units of a kind on a team.</summary>
+        public int CountAliveOfKind(Team team, UnitKind kind)
+        {
+            int count = 0;
+            for (int i = 0; i < _units.Count; i++)
+            {
+                Unit u = _units[i];
+                if (u.Team == team && u.IsAlive && u.Kind == kind) count++;
+            }
+            return count;
+        }
+
+        /// <summary>Every hero (alive or dead), new list.</summary>
+        public List<Unit> AllHeroes()
+        {
+            var list = new List<Unit>();
+            for (int i = 0; i < _units.Count; i++)
+            {
+                if (_units[i].IsHero) list.Add(_units[i]);
+            }
+            return list;
+        }
+
+        /// <summary>Living tower of a team, or null.</summary>
+        public Unit TowerOf(Team team)
+        {
+            for (int i = 0; i < _units.Count; i++)
+            {
+                Unit u = _units[i];
+                if (u.Team == team && u.IsTower && u.IsAlive) return u;
+            }
+            return null;
+        }
+
+        /// <summary>Nearest living enemy of the given kind within maxRange, or null.</summary>
+        public Unit NearestEnemyOfKind(Vector3 position, Team enemyOf, UnitKind kind, float maxRange, bool ignoreInvisible = true)
+        {
+            Unit best = null;
+            float bestSqr = maxRange * maxRange;
+            for (int i = 0; i < _units.Count; i++)
+            {
+                Unit u = _units[i];
+                if (u.Team == enemyOf || !u.IsAlive || u.Kind != kind) continue;
+                if (ignoreInvisible && u.IsInvisible) continue;
+                float sqr = FlatSqrDistance(position, u.Position);
+                if (sqr > bestSqr) continue;
+                bestSqr = sqr;
+                best = u;
+            }
+            return best;
+        }
+
+        /// <summary>Average current HP fraction of a team's heroes (dead heroes count as 0). Used for the timeout tie-break.</summary>
         public float AverageHealthFraction(Team team)
         {
             float sum = 0f;
             int count = 0;
             for (int i = 0; i < _units.Count; i++)
             {
-                if (_units[i].Team != team) continue;
+                if (_units[i].Team != team || !_units[i].IsHero) continue;
                 sum += _units[i].IsAlive ? _units[i].HealthFraction : 0f;
                 count++;
             }
@@ -131,17 +184,16 @@ namespace RuneArena.Combat
             return best;
         }
 
-        /// <summary>Living enemies whose body (HeroRadius) overlaps the circle. Includes invisible units. Appends to results.</summary>
+        /// <summary>Living enemies whose body (BodyRadius) overlaps the circle. Includes invisible units. Appends to results.</summary>
         public void EnemiesInRadius(Vector3 center, float radius, Team enemyOf, List<Unit> results)
         {
             if (results == null) throw new ArgumentNullException(nameof(results));
-            float reach = radius + GameConstants.HeroRadius;
-            float reachSqr = reach * reach;
             for (int i = 0; i < _units.Count; i++)
             {
                 Unit u = _units[i];
                 if (u.Team == enemyOf || !u.IsAlive) continue;
-                if (FlatSqrDistance(center, u.Position) <= reachSqr) results.Add(u);
+                float reach = radius + u.BodyRadius;
+                if (FlatSqrDistance(center, u.Position) <= reach * reach) results.Add(u);
             }
         }
 
@@ -149,13 +201,12 @@ namespace RuneArena.Combat
         public void AlliesInRadius(Vector3 center, float radius, Team team, List<Unit> results)
         {
             if (results == null) throw new ArgumentNullException(nameof(results));
-            float reach = radius + GameConstants.HeroRadius;
-            float reachSqr = reach * reach;
             for (int i = 0; i < _units.Count; i++)
             {
                 Unit u = _units[i];
                 if (u.Team != team || !u.IsAlive) continue;
-                if (FlatSqrDistance(center, u.Position) <= reachSqr) results.Add(u);
+                float reach = radius + u.BodyRadius;
+                if (FlatSqrDistance(center, u.Position) <= reach * reach) results.Add(u);
             }
         }
 
@@ -166,8 +217,6 @@ namespace RuneArena.Combat
             dir.y = 0f;
             if (dir.sqrMagnitude < 1e-6f) dir = Vector3.forward;
             dir.Normalize();
-            float reach = range + GameConstants.HeroRadius;
-            float reachSqr = reach * reach;
             float cosHalf = Mathf.Cos(angleDeg * 0.5f * Mathf.Deg2Rad);
             for (int i = 0; i < _units.Count; i++)
             {
@@ -176,7 +225,8 @@ namespace RuneArena.Combat
                 Vector3 to = u.Position - origin;
                 to.y = 0f;
                 float sqr = to.sqrMagnitude;
-                if (sqr > reachSqr) continue;
+                float reach = range + u.BodyRadius;
+                if (sqr > reach * reach) continue;
                 if (sqr < 1e-6f || Vector3.Dot(dir, to.normalized) >= cosHalf) results.Add(u);
             }
         }
@@ -189,7 +239,6 @@ namespace RuneArena.Combat
             float length = seg.magnitude;
             if (length < 1e-6f) return null;
             Vector3 dir = seg / length;
-            float reach = hitRadius + GameConstants.HeroRadius;
             Unit best = null;
             float bestT = float.MaxValue;
             for (int i = 0; i < _units.Count; i++)
@@ -201,6 +250,7 @@ namespace RuneArena.Combat
                 rel.y = 0f;
                 float t = Mathf.Clamp(Vector3.Dot(rel, dir), 0f, length);
                 Vector3 closest = dir * t;
+                float reach = hitRadius + u.BodyRadius;
                 if ((rel - closest).sqrMagnitude > reach * reach || t >= bestT) continue;
                 bestT = t;
                 best = u;
@@ -216,8 +266,6 @@ namespace RuneArena.Combat
             seg.y = 0f;
             float length = seg.magnitude;
             Vector3 dir = length > 1e-6f ? seg / length : Vector3.zero;
-            float reach = hitRadius + GameConstants.HeroRadius;
-            float reachSqr = reach * reach;
             for (int i = 0; i < _units.Count; i++)
             {
                 Unit u = _units[i];
@@ -225,7 +273,8 @@ namespace RuneArena.Combat
                 Vector3 rel = u.Position - from;
                 rel.y = 0f;
                 float t = length > 1e-6f ? Mathf.Clamp(Vector3.Dot(rel, dir), 0f, length) : 0f;
-                if ((rel - dir * t).sqrMagnitude <= reachSqr) results.Add(u);
+                float reach = hitRadius + u.BodyRadius;
+                if ((rel - dir * t).sqrMagnitude <= reach * reach) results.Add(u);
             }
         }
 

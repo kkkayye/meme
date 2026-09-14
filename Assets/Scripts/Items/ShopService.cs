@@ -44,7 +44,7 @@ namespace RuneArena.Items
         /// <summary>Generates offers for every unit in GameServices.World and resets reroll counts / ready flags.</summary>
         public void OpenShop(int round)
         {
-            IReadOnlyList<Unit> units = GameServices.World != null ? GameServices.World.Units : (IReadOnlyList<Unit>)Array.Empty<Unit>();
+            IReadOnlyList<Unit> units = GameServices.World != null ? GameServices.World.AllHeroes() : (IReadOnlyList<Unit>)Array.Empty<Unit>();
             OpenShop(round, units);
         }
 

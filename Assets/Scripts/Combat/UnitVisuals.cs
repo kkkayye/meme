@@ -45,33 +45,71 @@ namespace RuneArena.Combat
         {
             if (hero == null) throw new ArgumentNullException(nameof(hero));
             if (_built) return;
-            BodyColor = hero.Color;
+            Color teamColor = team == Team.Blue ? new Color(0.3f, 0.55f, 1f, 1f) : new Color(1f, 0.35f, 0.3f, 1f);
+            BodyColor = hero.Kind == UnitKind.Hero ? hero.Color : Color.Lerp(teamColor, hero.Color, 0.35f);
             Body = new GameObject("Body").transform;
             Body.SetParent(transform, false);
             Body.localPosition = Vector3.zero;
+            if (hero.Kind == UnitKind.Tower) BuildTower(hero, teamColor);
+            else BuildCapsuleBody(hero, teamColor);
+            _translucent = PrimitiveFactory.Unlit(new Color(BodyColor.r, BodyColor.g, BodyColor.b, GameConstants.InvisibleOwnTeamAlpha));
+            _built = true;
+        }
 
+        /// <summary>Heroes and minions: capsule sized by BodyRadius/BodyHeight, a nose cube and a team ring.</summary>
+        private void BuildCapsuleBody(HeroDefinition hero, Color teamColor)
+        {
+            float radius = hero.BodyRadius;
+            float height = hero.BodyHeight;
             GameObject capsule = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             capsule.name = "Capsule";
             capsule.transform.SetParent(Body, false);
-            capsule.transform.localPosition = new Vector3(0f, GameConstants.HeroHeight * 0.5f, 0f);
+            capsule.transform.localPosition = new Vector3(0f, height * 0.5f, 0f);
+            capsule.transform.localScale = new Vector3(radius * 2f, height * 0.5f, radius * 2f);
             PrimitiveFactory.RemoveCollider(capsule);
             AddBodyRenderer(capsule.GetComponent<Renderer>(), BodyColor);
 
-            GameObject nose = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            nose.name = "Nose";
-            nose.transform.SetParent(Body, false);
-            nose.transform.localPosition = new Vector3(0f, GameConstants.HeroHeight * 0.6f, GameConstants.HeroRadius + NoseSize * 0.35f);
-            nose.transform.localScale = new Vector3(NoseSize, NoseSize, NoseSize * 1.6f);
-            PrimitiveFactory.RemoveCollider(nose);
-            AddBodyRenderer(nose.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.white, 0.6f));
+            float nose = NoseSize * (radius / GameConstants.HeroRadius);
+            GameObject noseGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            noseGo.name = "Nose";
+            noseGo.transform.SetParent(Body, false);
+            noseGo.transform.localPosition = new Vector3(0f, height * 0.6f, radius + nose * 0.35f);
+            noseGo.transform.localScale = new Vector3(nose, nose, nose * 1.6f);
+            PrimitiveFactory.RemoveCollider(noseGo);
+            AddBodyRenderer(noseGo.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.white, 0.6f));
 
-            Color ringColor = team == Team.Blue ? new Color(0.3f, 0.55f, 1f, 0.85f) : new Color(1f, 0.35f, 0.3f, 0.85f);
-            GameObject ring = PrimitiveFactory.Disc("TeamRing", transform, new Vector3(0f, 0.03f, 0f), RingRadius, 0.04f, PrimitiveFactory.Unlit(ringColor));
+            Color ringColor = new Color(teamColor.r, teamColor.g, teamColor.b, 0.85f);
+            float ringRadius = RingRadius * (radius / GameConstants.HeroRadius);
+            GameObject ring = PrimitiveFactory.Disc("TeamRing", transform, new Vector3(0f, 0.03f, 0f), ringRadius, 0.04f, PrimitiveFactory.Unlit(ringColor));
             ring.transform.localPosition = new Vector3(0f, 0.03f, 0f);
             _ring = ring.GetComponent<Renderer>();
+        }
 
-            _translucent = PrimitiveFactory.Unlit(new Color(BodyColor.r, BodyColor.g, BodyColor.b, GameConstants.InvisibleOwnTeamAlpha));
-            _built = true;
+        /// <summary>Towers: a tall cylinder, a turret cube that shows facing, and a base disc.</summary>
+        private void BuildTower(HeroDefinition hero, Color teamColor)
+        {
+            float radius = hero.BodyRadius;
+            float height = hero.BodyHeight;
+            GameObject column = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            column.name = "Column";
+            column.transform.SetParent(Body, false);
+            column.transform.localPosition = new Vector3(0f, height * 0.5f, 0f);
+            column.transform.localScale = new Vector3(radius * 2f, height * 0.5f, radius * 2f);
+            PrimitiveFactory.RemoveCollider(column);
+            AddBodyRenderer(column.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.black, 0.25f));
+
+            GameObject turret = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            turret.name = "Turret";
+            turret.transform.SetParent(Body, false);
+            turret.transform.localPosition = new Vector3(0f, height + 0.4f, radius * 0.4f);
+            turret.transform.localScale = new Vector3(radius * 0.9f, 0.8f, radius * 1.4f);
+            PrimitiveFactory.RemoveCollider(turret);
+            AddBodyRenderer(turret.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.white, 0.4f));
+
+            Color ringColor = new Color(teamColor.r, teamColor.g, teamColor.b, 0.6f);
+            GameObject ring = PrimitiveFactory.Disc("Base", transform, new Vector3(0f, 0.03f, 0f), radius * 1.6f, 0.06f, PrimitiveFactory.Unlit(ringColor));
+            ring.transform.localPosition = new Vector3(0f, 0.03f, 0f);
+            _ring = ring.GetComponent<Renderer>();
         }
 
         /// <summary>Invisible: alpha 0.3 for the local human's team, renderers hidden for the enemy team. False restores full visibility.</summary>

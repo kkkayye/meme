@@ -216,3 +216,33 @@ Assets/
 - Rune draft (rarity, pity, comeback, sets), shop (tiers, reroll, sell), chests (pity, reveal) all function and are visible in the HUD.
 - Bots fight, use skills, capture, loot, draft, and shop.
 - EditMode + PlayMode tests pass in batch mode.
+
+---
+
+# v0.2 — Lane objectives: minions, towers, lane economy
+
+Added on top of v0.1 without changing the round format. Every round is now a one-lane brawl: each team has a **tower** in front of its base, **minion waves** march down the lane, and pushing down the enemy tower wins the round outright.
+
+## Units
+- `UnitKind { Hero, Minion, Tower }` on `HeroDefinition.Kind`. Minions and towers reuse `Unit`, `SkillCaster` (basic attack only), `DamagePipeline`, `CombatWorld` queries and events, but they never draft, shop, capture, open chests or count toward wipes. `BodyRadius` / `BodyHeight` are per definition and every hit query pads by the target's own radius.
+- Definitions live in `Content/MinionCatalog.cs`: melee minion (HP 300, AD 22, AS 1.0, MS 4.5, armor 10, range 1.6), ranged minion (HP 220, AD 30, AS 0.8, range 5.5, projectile), tower (HP 2500, armor 60, AD 100, AS 0.8, range 7.5, projectile speed 30).
+- Towers are static: no CharacterController, a capsule collider on the obstacle layer plus a walkability block; they ignore statuses, knockbacks and **all non-basic-attack damage** (skills cannot hurt towers). Destroying a tower disables its collider.
+
+## Lane flow (`Match/LaneController`)
+- Countdown: previous lane cleared, both towers spawned at x = ±12 (the two center pillars moved to (±13, ±6.5)).
+- Combat: first wave 4 s in, then every 25 s: 3 melee + 1 ranged per team from just in front of the base, spread on Z. Minions gain +10% HP and AD per round after round 1.
+- Minion AI (`AI/MinionBrain`): march toward the enemy tower (then base); target priority nearest enemy minion (6 u) → enemy tower in reach → enemy hero within 4 u; shared obstacle avoidance in `AI/Steering`.
+- Tower AI (`AI/TowerBrain`): shoots the nearest enemy in range, minions before heroes; an enemy hero that damages an allied hero under the tower draws its fire for 3 s; consecutive hits on the same hero ramp its damage +25% per shot up to +100% (a temporary AD modifier).
+- Round end: tower destroyed → the attacking team wins the round immediately (`MatchPhaseRunner.RequestRoundEnd`). Team wipe and timeout rules unchanged; round length is now 120 s.
+
+## Economy
+- Passive income 4/s (heroes only) and kill/assist gold unchanged.
+- Minion last hit: 20 (melee) / 25 (ranged) to the killing hero, 40% of that to allied heroes within 8 u. Kills by minions or towers pay nothing.
+- Tower destroyed: +250 to every hero of the attacking team.
+- Timeout points: kills × 100 + capture seconds × 10 + minion kills × 10 + tower damage × 0.05.
+
+## Bots
+`AI/BotBrain` fights enemy heroes within 9 u first, otherwise farms minions within 12 u, pushes the enemy tower only while allied minions are near it (or the tower is below 25%), and backs out of tower range when alone or below 45% HP. Skills are spent on heroes only (basics on minions and towers).
+
+## Juice / UI
+Minion hits and deaths use light feedback (no hit-stop); tower destruction gets the biggest burst and shake. Overhead bars scale by kind (minions small and nameless, towers large). The HUD shows the next-wave timer and both towers' HP.

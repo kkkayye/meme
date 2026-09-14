@@ -180,6 +180,23 @@ namespace RuneArena.Core
         public ControlPointCaptured(Team team) { Team = team; }
     }
 
+    /// <summary>Published when a lane tower dies (the attacking team wins the round).</summary>
+    public readonly struct TowerDestroyed
+    {
+        public readonly Unit Tower;
+        public readonly Team Owner;
+        public readonly Team Attacker;
+        public TowerDestroyed(Unit tower, Team owner, Team attacker) { Tower = tower; Owner = owner; Attacker = attacker; }
+    }
+
+    /// <summary>Published when a minion wave spawns for both teams.</summary>
+    public readonly struct MinionWaveSpawned
+    {
+        public readonly int Round;
+        public readonly int Wave;
+        public MinionWaveSpawned(int round, int wave) { Round = round; Wave = wave; }
+    }
+
     /// <summary>Published by SkillCaster when a cooldown finishes (HUD ping).</summary>
     public readonly struct CooldownReady
     {

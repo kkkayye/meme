@@ -91,6 +91,12 @@ namespace RuneArena.Juice
             if (target.Visuals != null) target.Visuals.Flash();
             Color color = e.Info.Source != null && e.Info.Source.Visuals != null ? e.Info.Source.Visuals.BodyColor : Color.white;
             float proximity = Proximity(target.Position);
+            if (!target.IsHero)
+            {
+                if (e.Info.Tag == DamageTag.Basic || e.Info.Tag == DamageTag.Skill) VfxFactory.Burst(target.Position + Vector3.up * 0.8f, color, 6, 0.15f, 4f);
+                if (e.Info.Source != null && e.Info.Source.IsHero) _sfx?.Play(SfxSynth.Sound.Hit, 0.4f);
+                return;
+            }
             switch (e.Info.Tag)
             {
                 case DamageTag.Basic:
@@ -111,11 +117,26 @@ namespace RuneArena.Juice
         private void OnDied(UnitDied e)
         {
             if (e.Victim == null) return;
+            Color color = e.Victim.Visuals != null ? e.Victim.Visuals.BodyColor : Color.white;
+            if (e.Victim.IsMinion)
+            {
+                VfxFactory.Burst(e.Victim.Position + Vector3.up * 0.6f, color, 10, 0.2f, 5f);
+                _sfx?.Play(SfxSynth.Sound.Hit, 0.5f);
+                return;
+            }
+            if (e.Victim.IsTower)
+            {
+                RequestHitStop(GameConstants.HitStopKillSeconds);
+                AddTrauma(GameConstants.TraumaUlt);
+                VfxFactory.Burst(e.Victim.Position + Vector3.up * 2f, color, 60, 0.5f, 10f);
+                VfxFactory.Ring(e.Victim.Position, color, 6f, 0.8f);
+                _sfx?.Play(SfxSynth.Sound.Kill);
+                return;
+            }
             RequestHitStop(GameConstants.HitStopKillSeconds);
             Unit spectated = GameServices.Match != null ? GameServices.Match.SpectatedUnit : null;
             float trauma = ReferenceEquals(e.Victim, spectated) ? GameConstants.TraumaOwnDeath : GameConstants.TraumaSkillHit * Proximity(e.Victim.Position);
             AddTrauma(trauma);
-            Color color = e.Victim.Visuals != null ? e.Victim.Visuals.BodyColor : Color.white;
             VfxFactory.Burst(e.Victim.Position + Vector3.up, color, 28, 0.35f, 8f);
             VfxFactory.Ring(e.Victim.Position, color, 2.5f, 0.45f);
             _sfx?.Play(SfxSynth.Sound.Kill);

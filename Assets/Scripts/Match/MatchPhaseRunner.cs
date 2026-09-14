@@ -11,6 +11,7 @@ namespace RuneArena.Match
         private readonly MatchController _match;
         private readonly Dictionary<Unit, float> _botDraftAt = new Dictionary<Unit, float>();
         private float _elapsed;
+        private Team? _pendingWinner;
 
         public MatchPhaseRunner(MatchController match)
         {
@@ -32,6 +33,12 @@ namespace RuneArena.Match
                 case MatchPhase.Combat: TickCombat(dt); break;
                 case MatchPhase.RoundEnd: if (_match.PhaseTimeRemaining <= 0f) AfterRoundEnd(); break;
             }
+        }
+
+        /// <summary>Ends the current combat round in favour of a team at the next tick (tower destroyed).</summary>
+        public void RequestRoundEnd(Team winner)
+        {
+            if (_match.Phase == MatchPhase.Combat) _pendingWinner = winner;
         }
 
         public void EnterRuneDraft()
@@ -113,6 +120,8 @@ namespace RuneArena.Match
             _match.Chests.ResetTimer();
             GameServices.Scoring.Reset();
             if (CombatFx.Exists) CombatFx.Instance.ClearAll();
+            _pendingWinner = null;
+            _match.Lane?.BeginRound(_match.Round);
             _match.SetPhase(MatchPhase.Countdown);
             _match.Ui?.HideOverlays();
             _match.Ui?.ShowHud(_match.SpectatedUnit);
@@ -130,9 +139,17 @@ namespace RuneArena.Match
 
         private void TickCombat(float dt)
         {
+            if (_pendingWinner.HasValue)
+            {
+                Team winner = _pendingWinner.Value;
+                _pendingWinner = null;
+                EnterRoundEnd(winner);
+                return;
+            }
             GameServices.Economy.TickPassive(dt);
             _match.ControlPoint.Tick(dt);
             _match.Chests.Tick(dt);
+            _match.Lane?.Tick(dt);
             CombatWorld world = GameServices.World;
             bool blueAlive = world.AnyAlive(Team.Blue);
             bool redAlive = world.AnyAlive(Team.Red);
