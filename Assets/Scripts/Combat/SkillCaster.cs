@@ -86,7 +86,11 @@ namespace RuneArena.Combat
         /// <summary>Aborts the current cast (and any buffered input) without triggering its effect or cooldown.</summary>
         public void CancelCast()
         {
-            if (_state == CastState.Dashing && Owner != null && Owner.Motor != null) Owner.Motor.CancelDash();
+            if (_state == CastState.Dashing && Owner != null)
+            {
+                if (Owner.Motor != null) Owner.Motor.CancelDash();
+                if (Owner.Visuals != null) Owner.Visuals.SetBodyLift(0f);
+            }
             EndCast(false);
             _hasBuffer = false;
         }
@@ -310,9 +314,27 @@ namespace RuneArena.Combat
             Vector3 now = Owner.Position;
             SkillExecutor.DashTick(Owner, _current, _dashPrev, now, _dashHits);
             _dashPrev = now;
-            if (Owner.Motor.IsDashing) return;
+            if (Owner.Motor.IsDashing)
+            {
+                if (_current.LeapHeight > 0f) Owner.Visuals.SetBodyLift(LeapLift(now));
+                return;
+            }
+            Owner.Visuals.SetBodyLift(0f);
             Owner.Visuals.ResetScale();
+            SkillDefinition finished = _current;
             EnterRecovery();
+            SkillExecutor.OnDashEnded(Owner, finished);
+        }
+
+        /// <summary>Half-sine arc over the dash distance (visual only; hit queries stay on the ground).</summary>
+        private float LeapLift(Vector3 now)
+        {
+            float total = Mathf.Max(0.01f, _current.Range);
+            Vector3 start = Owner.Motor.DashStart;
+            start.y = 0f;
+            now.y = 0f;
+            float t = Mathf.Clamp01(Vector3.Distance(start, now) / total);
+            return _current.LeapHeight * Mathf.Sin(t * Mathf.PI);
         }
 
         private void TickChannel(float dt)

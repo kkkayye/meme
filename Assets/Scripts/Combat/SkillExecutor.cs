@@ -50,6 +50,7 @@ namespace RuneArena.Combat
             if (aimDir.sqrMagnitude < 1e-6f) aimDir = caster.Facing;
             aimDir.Normalize();
             ApplySelfEffects(caster, skill);
+            PayHealthCost(caster, skill);
             float range = skill.GetRange(caster.Stats);
             switch (skill.Shape)
             {
@@ -58,12 +59,31 @@ namespace RuneArena.Combat
                 case SkillShape.Cone:
                 case SkillShape.Melee: ResolveCone(caster, skill, aimDir, range); break;
                 case SkillShape.Circle: ScheduleCircle(caster, skill, ClampToRange(caster.Position, aimPoint, range)); break;
-                case SkillShape.SelfCircle: ResolveCircle(caster, skill, caster.Position); break;
+                case SkillShape.SelfCircle:
+                    ResolveCircle(caster, skill, caster.Position);
+                    SkillFollowUps.Schedule(caster, skill, caster.Position);
+                    break;
                 case SkillShape.Dash: caster.Motor.BeginDash(aimDir, range, skill.Speed, null); break;
                 case SkillShape.Blink: Blink(caster, skill, aimDir, range); break;
                 case SkillShape.Buff:
                 case SkillShape.Channel: break;
             }
+        }
+
+        /// <summary>Called by SkillCaster when a Dash skill finishes travelling: resolves the follow-up stage (e.g. 落地震击) at the landing point.</summary>
+        public static void OnDashEnded(Unit caster, SkillDefinition skill)
+        {
+            if (caster == null || skill == null || !caster.IsAlive) return;
+            SkillFollowUps.Schedule(caster, skill, caster.Position);
+        }
+
+        /// <summary>Resolves a Circle / SelfCircle definition at an explicit point (follow-up stages) and publishes SkillResolvedAt.</summary>
+        public static void ResolveCircleAt(Unit caster, SkillDefinition skill, Vector3 center)
+        {
+            if (caster == null) throw new ArgumentNullException(nameof(caster));
+            if (skill == null) throw new ArgumentNullException(nameof(skill));
+            center.y = 0f;
+            ResolveCircle(caster, skill, center);
         }
 
         /// <summary>One channel tick: damages every enemy within Radius of the caster.</summary>
@@ -150,15 +170,18 @@ namespace RuneArena.Combat
 
         private static void ScheduleCircle(Unit caster, SkillDefinition skill, Vector3 point)
         {
+            EventBus.Publish(new GroundSkillPlaced(caster, skill, point, skill.Delay));
             CombatFx.Instance.Schedule(skill.Delay, () =>
             {
                 if (caster == null) return;
                 ResolveCircle(caster, skill, point);
+                SkillFollowUps.Schedule(caster, skill, point);
             });
         }
 
         private static void ResolveCircle(Unit caster, SkillDefinition skill, Vector3 center)
         {
+            EventBus.Publish(new SkillResolvedAt(caster, skill, center));
             if (GameServices.World == null) return;
             var hits = new List<Unit>();
             GameServices.World.EnemiesInRadius(center, skill.Radius, caster.Team, hits);
@@ -166,6 +189,13 @@ namespace RuneArena.Combat
             {
                 HitTarget(caster, skill, hits[i], hits[i].Position - center, 1f);
             }
+        }
+
+        /// <summary>燃血-style cost: a fraction of CURRENT health, never lethal.</summary>
+        private static void PayHealthCost(Unit caster, SkillDefinition skill)
+        {
+            if (skill.HealthCostFraction <= 0f) return;
+            caster.SpendHealth(caster.Health * Mathf.Clamp01(skill.HealthCostFraction));
         }
 
         private static void Blink(Unit caster, SkillDefinition skill, Vector3 dir, float range)
@@ -185,6 +215,7 @@ namespace RuneArena.Combat
             }
             caster.Motor.SetPosition(to);
             EventBus.Publish(new DashPerformed(caster, from, to));
+            SkillFollowUps.Schedule(caster, skill, to);
         }
 
         private static void ApplySelfEffects(Unit caster, SkillDefinition skill)
@@ -217,6 +248,9 @@ namespace RuneArena.Combat
                     break;
                 case SkillEffectType.SpeedBoost:
                     caster.Status.Apply(StatusType.SpeedBoost, fx.Value, fx.Duration, skill.Id, caster);
+                    break;
+                case SkillEffectType.DamageAmp:
+                    caster.Status.Apply(StatusType.DamageAmp, fx.Value, fx.Duration, skill.Id, caster);
                     break;
             }
         }

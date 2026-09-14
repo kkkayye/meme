@@ -254,6 +254,13 @@ namespace RuneArena.Combat
             Body.localScale = new Vector3(1f - 0.15f * t, 1f - 0.15f * t, 1f + 0.35f * t);
         }
 
+        /// <summary>Lifts the whole body off the ground (leap arcs). 0 puts it back down.</summary>
+        public void SetBodyLift(float height)
+        {
+            if (!_built || Body == null) return;
+            Body.localPosition = new Vector3(0f, Mathf.Max(0f, height), 0f);
+        }
+
         /// <summary>Resets the body scale to 1 (called when a dash ends).</summary>
         public void ResetScale()
         {

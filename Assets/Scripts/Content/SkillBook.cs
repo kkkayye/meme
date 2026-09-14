@@ -221,6 +221,7 @@ namespace RuneArena.Content
                 case SkillEffectType.Invisible:
                 case SkillEffectType.DamageReduction:
                 case SkillEffectType.SpeedBoost:
+                case SkillEffectType.DamageAmp:
                     return true;
                 default:
                     return false;

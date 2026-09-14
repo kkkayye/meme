@@ -32,6 +32,7 @@ namespace RuneArena.Core
         public static SkillEffect Invisible(float duration) => new SkillEffect(SkillEffectType.Invisible, 1f, duration);
         public static SkillEffect DamageReduction(float fraction, float duration) => new SkillEffect(SkillEffectType.DamageReduction, fraction, duration);
         public static SkillEffect SpeedBoost(float fraction, float duration) => new SkillEffect(SkillEffectType.SpeedBoost, fraction, duration);
+        public static SkillEffect DamageAmp(float fraction, float duration) => new SkillEffect(SkillEffectType.DamageAmp, fraction, duration);
     }
 
     /// <summary>Immutable skill definition (DESIGN.md section 5). Author with object initializers; all fields have sane defaults.</summary>
@@ -77,12 +78,22 @@ namespace RuneArena.Core
         public bool? RootsCaster { get; init; }
         /// <summary>Whether this is the hero's ultimate (used for trauma 0.6 and the AI Ult rule). Defaults to Key == R.</summary>
         public bool? IsUltimate { get; init; }
+        /// <summary>Fraction of the caster's CURRENT health paid when the skill resolves (燃血). Never lethal (floors at 1 HP). 0 = free.</summary>
+        public float HealthCostFraction { get; init; }
+        /// <summary>Second stage resolved FollowUpDelay seconds later at the skill's ground point (Circle / SelfCircle) or at the caster's landing point (Dash / Blink). Its Shape must be Circle or SelfCircle.</summary>
+        public SkillDefinition FollowUp { get; init; }
+        public float FollowUpDelay { get; init; }
+        /// <summary>Visual arc height (units) of the body while a Dash travels (leap). 0 = flat dash. Never affects hit queries.</summary>
+        public float LeapHeight { get; init; }
+        /// <summary>Cosmetic tag consumed by the Juice layer (e.g. "clam", "carrot", "fire", "spin"). Never affects gameplay.</summary>
+        public string Vfx { get; init; } = "";
 
         public bool IsBasicAttack => Key == SkillKey.Basic;
         public bool IsMovementSkill => Shape == SkillShape.Dash || Shape == SkillShape.Blink;
         public bool RootsCasterEffective => RootsCaster ?? (Shape == SkillShape.Channel);
         public bool IsUltimateEffective => IsUltimate ?? (Key == SkillKey.R);
         public bool DealsDamage => BaseDamage > 0f || AdRatio > 0f || ApRatio > 0f;
+        public bool HasFollowUp => FollowUp != null;
 
         /// <summary>Range to use at runtime: basic attacks read the AttackRange stat, everything else uses Range.</summary>
         public float GetRange(StatBlock stats)
@@ -118,7 +129,8 @@ namespace RuneArena.Core
                 Angle = Angle, Speed = Speed, Delay = Delay, ProjectileCount = ProjectileCount,
                 BaseDamage = BaseDamage, AdRatio = AdRatio, ApRatio = ApRatio, DamageType = DamageType,
                 Effects = Effects, Charges = charges, BreaksInvisibility = BreaksInvisibility,
-                RootsCaster = RootsCaster, IsUltimate = IsUltimate
+                RootsCaster = RootsCaster, IsUltimate = IsUltimate, HealthCostFraction = HealthCostFraction,
+                FollowUp = FollowUp, FollowUpDelay = FollowUpDelay, LeapHeight = LeapHeight, Vfx = Vfx
             };
         }
     }

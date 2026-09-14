@@ -132,6 +132,12 @@ namespace RuneArena.Combat
             return Mathf.Clamp01(MaxMagnitude(StatusType.DamageReduction));
         }
 
+        /// <summary>1 + strongest outgoing damage amplification (燃血: 1.35).</summary>
+        public float GetDamageAmplification()
+        {
+            return 1f + Mathf.Max(0f, MaxMagnitude(StatusType.DamageAmp));
+        }
+
         /// <summary>Removes every instance of a type.</summary>
         public void Remove(StatusType type)
         {

@@ -79,7 +79,9 @@ namespace RuneArena.Core
         Invisible,
         DamageReduction,
         SpeedBoost,
-        Pull
+        Pull,
+        /// <summary>Self: outgoing basic/skill damage multiplied by (1 + Value) for Duration (燃血).</summary>
+        DamageAmp
     }
 
     /// <summary>Hint for the bot brain on when to use a skill.</summary>
@@ -159,6 +161,8 @@ namespace RuneArena.Core
         DamageReduction,
         Invisible,
         Burn,
-        Root
+        Root,
+        /// <summary>Outgoing damage amplification (magnitude = bonus fraction).</summary>
+        DamageAmp
     }
 }

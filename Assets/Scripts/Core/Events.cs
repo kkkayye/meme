@@ -115,6 +115,25 @@ namespace RuneArena.Core
     }
 
     /// <summary>Published by UnitMotor when a dash or blink completes (Storm set, 冲刺护盾, 烈焰足迹).</summary>
+    /// <summary>A ground-targeted (Circle) skill was placed at a point and resolves after Delay seconds (summon / telegraph visuals).</summary>
+    public readonly struct GroundSkillPlaced
+    {
+        public readonly Unit Caster;
+        public readonly SkillDefinition Skill;
+        public readonly Vector3 Point;
+        public readonly float Delay;
+        public GroundSkillPlaced(Unit caster, SkillDefinition skill, Vector3 point, float delay) { Caster = caster; Skill = skill; Point = point; Delay = delay; }
+    }
+
+    /// <summary>A circle-shaped skill (or a follow-up stage) resolved at a point (impact visuals).</summary>
+    public readonly struct SkillResolvedAt
+    {
+        public readonly Unit Caster;
+        public readonly SkillDefinition Skill;
+        public readonly Vector3 Point;
+        public SkillResolvedAt(Unit caster, SkillDefinition skill, Vector3 point) { Caster = caster; Skill = skill; Point = point; }
+    }
+
     public readonly struct DashPerformed
     {
         public readonly Unit Unit;

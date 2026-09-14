@@ -127,6 +127,13 @@ namespace RuneArena.Combat
             if (healed > 0f) EventBus.Publish(new UnitHealed(this, source, healed));
         }
 
+        /// <summary>Pays health as a skill cost (燃血): never lethal, floors at 1 HP, no damage events. Ignored when dead or amount &lt;= 0.</summary>
+        public void SpendHealth(float amount)
+        {
+            if (!IsAlive || amount <= 0f) return;
+            Health = Mathf.Max(1f, Health - amount);
+        }
+
         public void AddShield(float amount, float duration, string sourceId)
         {
             if (!IsAlive || amount <= 0f) return;

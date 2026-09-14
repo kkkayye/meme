@@ -16,7 +16,7 @@ namespace RuneArena.Combat
             if (!target.IsAlive || info.Amount <= 0f) return DamageResult.None;
             if (target.IsTower && info.Tag != DamageTag.Basic) return DamageResult.None;
 
-            float mitigated = MitigateByArmor(info.Amount, info.Type, target.Stats.Get(StatType.Armor));
+            float mitigated = MitigateByArmor(info.Amount * OutgoingMultiplier(info), info.Type, target.Stats.Get(StatType.Armor));
             mitigated *= 1f - Mathf.Clamp01(target.Status.GetDamageReduction());
             if (mitigated <= 0f) return DamageResult.None;
 
@@ -37,6 +37,14 @@ namespace RuneArena.Combat
             if (guardId != null) EventBus.Publish(new LethalDamagePrevented(target, guardId));
             if (killed) target.Kill(info.Source);
             return result;
+        }
+
+        /// <summary>Source-side amplification (DamageAmp status) for basic attacks and skills; burns, items and reflects are not amplified.</summary>
+        public static float OutgoingMultiplier(DamageInfo info)
+        {
+            if (info == null || info.Source == null || info.Source.Status == null) return 1f;
+            if (info.Tag != DamageTag.Basic && info.Tag != DamageTag.Skill) return 1f;
+            return info.Source.Status.GetDamageAmplification();
         }
 
         /// <summary>Armor formula: dmg * 100 / (100 + armor) for Physical and Magical; True damage ignores armor.</summary>
