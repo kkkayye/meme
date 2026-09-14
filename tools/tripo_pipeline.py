@@ -1,53 +1,62 @@
 #!/usr/bin/env python3
-"""Tripo 3D pipeline for Rune Arena: text -> model -> rig -> retarget animations -> FBX into Assets/Art/Tripo/<id>/.
+"""Tripo pipeline for Rune Arena, driven by the official `tripo` CLI (V3 API).
 
-Usage (run from the project root with the venv):
-  TRIPO_API_KEY=tsk_... tools/.venv/bin/python tools/tripo_pipeline.py            # everything
-  tools/.venv/bin/python tools/tripo_pipeline.py --dry-run                        # print the plan, no API calls
-  tools/.venv/bin/python tools/tripo_pipeline.py --only blaze vanguard            # subset
-  tools/.venv/bin/python tools/tripo_pipeline.py --skip-anim                      # models + rig only
+text -> model -> rig-check -> rig (v1.0 biped, mixamo bone names, FBX) -> retarget presets (FBX, in place)
+-> files copied into Assets/Art/Tripo/<id>/ for Unity's CharacterPrefabBuilder.
 
-Progress is cached in tools/tripo_manifest.json so re-runs resume instead of paying again.
+Usage (project root):
+  tools/.venv/bin/python tools/tripo_pipeline.py --dry-run          # print the plan, no API calls
+  tools/.venv/bin/python tools/tripo_pipeline.py                    # everything (key from TRIPO_API_KEY or tools/tripo.key)
+  tools/.venv/bin/python tools/tripo_pipeline.py --only blaze tower # subset
+  tools/.venv/bin/python tools/tripo_pipeline.py --skip-anim        # models + rig only
+
+State lives in tools/tripo_manifest.json: finished steps are reused, so re-running never pays twice.
 """
 import argparse
-import asyncio
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ART_DIR = os.path.join(ROOT, "Assets", "Art", "Tripo")
-PREVIEW_DIR = os.path.join(ROOT, "tools", "tripo_out")
+OUT_DIR = os.path.join(ROOT, "tools", "tripo_out")
 MANIFEST = os.path.join(ROOT, "tools", "tripo_manifest.json")
+TRIPO = shutil.which("tripo") or os.path.expanduser("~/.hermes/node/bin/tripo")
 
-MODEL_VERSION = "v3.0-20250812"
-RIG_VERSION = "v1.0-20240301"   # biped rig with the 101-animation library (cast_a_spell, slash, chop, ...)
-STYLE = ("stylized low-poly game character, clean readable silhouette, T-pose with arms out, "
-         "facing forward, full body, single layer of clothing, no cape, no loose accessories, "
-         "simple armor pieces, solid colors, game-ready asset")
+GEN_MODEL = "tripo-v3.1"
+RIG_MODEL = "rig-v1.0"           # biped rig with the 90+ preset library (cast_a_spell, chop, ...)
+RIG_SPEC = "mixamo"              # Mixamo bone names: Unity Humanoid-friendly, Mixamo clips can be added later
+STYLE = ("stylized low-poly game character, clean readable silhouette, T-pose with arms straight out, "
+         "facing forward, full body, single layer of clothing, no cape, no loose accessories, simple armor pieces, "
+         "solid colors, game-ready asset")
 COMMON_ANIMS = ["idle", "run", "hurt", "fall", "dive"]
 
 CHARACTERS = [
-    {"id": "blaze", "rig": True, "faces": 16000,
-     "prompt": "young fire mage, orange and red robes with gold trim, short spiky hair, holding a short staff with a small flame, " + STYLE,
-     "attack": "shoot", "cast": "cast_a_spell"},
-    {"id": "vanguard", "rig": True, "faces": 16000,
-     "prompt": "heavy armored knight, steel blue plate armor, large round shield on the left arm, short sword in the right hand, sturdy build, " + STYLE,
-     "attack": "slash", "cast": "chop"},
-    {"id": "shade", "rig": True, "faces": 16000,
-     "prompt": "agile hooded assassin, dark purple leather outfit, face mask, twin daggers, slim build, " + STYLE,
-     "attack": "slash", "cast": "chop"},
-    {"id": "minion_melee", "rig": True, "faces": 6000, "anims": ["idle", "run", "hurt", "fall"],
-     "prompt": "small round goblin foot soldier, grey tunic, wooden club, big head, short legs, " + STYLE,
-     "attack": "slash", "cast": None},
-    {"id": "minion_ranged", "rig": True, "faces": 6000, "anims": ["idle", "run", "hurt", "fall"],
-     "prompt": "small goblin archer, grey tunic with a yellow scarf, short bow in hand, big head, short legs, " + STYLE,
-     "attack": "shoot", "cast": None},
+    {"id": "blaze", "rig": True, "faces": 16000, "attack": "shoot", "cast": "cast_a_spell",
+     "prompt": "young fire mage, orange and red robes with gold trim, short spiky hair, holding a short staff with a small flame, " + STYLE},
+    {"id": "vanguard", "rig": True, "faces": 16000, "attack": "slash", "cast": "chop",
+     "prompt": "heavy armored knight, steel blue plate armor, large round shield on the left arm, short sword in the right hand, sturdy build, " + STYLE},
+    {"id": "shade", "rig": True, "faces": 16000, "attack": "slash", "cast": "chop",
+     "prompt": "agile hooded assassin, dark purple leather outfit, face mask, twin daggers, slim build, " + STYLE},
+    {"id": "minion_melee", "rig": True, "faces": 6000, "attack": "slash", "cast": None, "anims": ["idle", "run", "hurt", "fall"],
+     "prompt": "small round goblin foot soldier, grey tunic, wooden club, big head, short legs, " + STYLE},
+    {"id": "minion_ranged", "rig": True, "faces": 6000, "attack": "shoot", "cast": None, "anims": ["idle", "run", "hurt", "fall"],
+     "prompt": "small goblin archer, grey tunic with a yellow scarf, short bow in hand, big head, short legs, " + STYLE},
     {"id": "tower", "rig": False, "faces": 12000,
      "prompt": "stylized stone watchtower, round tower with a crystal turret on top, low poly game asset, clean silhouette, solid colors"},
 ]
+
+EXIT_MEANING = {2: "usage/params", 3: "auth", 4: "insufficient credits (run `tripo topup`)", 5: "content policy",
+                6: "task failed (credits refunded)", 7: "network", 8: "not found", 9: "rate limit"}
+
+
+class TripoError(RuntimeError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
 
 
 def load_manifest():
@@ -64,8 +73,9 @@ def save_manifest(m):
 
 def animations_for(c):
     anims = list(c.get("anims", COMMON_ANIMS))
-    if c.get("attack"): anims.append(c["attack"])
-    if c.get("cast") and c["cast"] not in anims: anims.append(c["cast"])
+    for key in ("attack", "cast"):
+        if c.get(key) and c[key] not in anims:
+            anims.append(c[key])
     return anims
 
 
@@ -74,102 +84,115 @@ def chunks(items, size):
         yield items[i:i + size]
 
 
+def preset(name):
+    return "preset:biped:" + name if RIG_MODEL == "rig-v1.0" else "preset:" + name
+
+
 def plan(chars):
-    print("Plan:")
+    print(f"Plan (tripo CLI at {TRIPO}, model {GEN_MODEL}, rig {RIG_MODEL}/{RIG_SPEC}):")
+    total = 0
     for c in chars:
         if c["rig"]:
             anims = animations_for(c)
-            print(f"  {c['id']:14s} model({c['faces']} faces) -> rig({RIG_VERSION}) -> retarget {len(anims)} anims in {len(list(chunks(anims,5)))} task(s): {', '.join(anims)}")
+            cost = 20 + 25 + 10 * len(anims)
+            print(f"  {c['id']:14s} model({c['faces']} faces) -> rig-check -> rig -> retarget {len(anims)} anims in {len(list(chunks(anims, 5)))} task(s): {', '.join(anims)}   ~{cost} credits")
         else:
-            print(f"  {c['id']:14s} model({c['faces']} faces) -> convert FBX (static)")
-    print(f"Output: {ART_DIR}/<id>/  (rig.fbx, anim_N.fbx | model.fbx), previews in {PREVIEW_DIR}")
+            cost = 20 + 10
+            print(f"  {c['id']:14s} model({c['faces']} faces) -> convert FBX (static)   ~{cost} credits")
+        total += cost
+    print(f"  estimated total: ~{total} credits (list prices: model 20, rig 25, animation 10 each, complex convert 10)")
+    print(f"Output: {ART_DIR}/<id>/  (rig.fbx + anim_N.fbx | model.fbx); CLI artifacts and preview.png in {OUT_DIR}/<id>/")
 
 
-async def wait(client, task_id, label):
-    from tripo3d import TaskStatus
-    print(f"    waiting {label} [{task_id}]", flush=True)
-    task = await client.wait_for_task(task_id, polling_interval=3.0, verbose=False)
-    if task.status != TaskStatus.SUCCESS:
-        raise RuntimeError(f"{label} failed: status={task.status} code={task.error_code} msg={task.error_msg}")
-    return task
+def run(args, label):
+    """Runs a tripo CLI command, returns its final JSON line. Raises TripoError with the CLI exit code."""
+    cmd = [TRIPO] + args + ["--json", "--yes", "--quiet", "--no-open"]
+    print(f"    $ {' '.join(a if ' ' not in a else repr(a) for a in cmd)}", flush=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    stdout = proc.stdout.strip()
+    if proc.returncode != 0:
+        detail = stdout or proc.stderr.strip()[-600:]
+        raise TripoError(proc.returncode, f"{label}: exit {proc.returncode} ({EXIT_MEANING.get(proc.returncode, '?')}): {detail}")
+    line = stdout.splitlines()[-1] if stdout else "{}"
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError as e:
+        raise TripoError(1, f"{label}: could not parse CLI output: {line[:300]}") from e
 
 
-async def download(client, task, out_dir, base_name):
-    os.makedirs(out_dir, exist_ok=True)
-    tmp = os.path.join(PREVIEW_DIR, "tmp_" + task.task_id)
-    os.makedirs(tmp, exist_ok=True)
-    files = await client.download_task_models(task, tmp)
-    result = {}
-    for key in ("model", "pbr_model", "base_model"):
-        path = files.get(key)
-        if not path or not os.path.exists(path):
-            continue
-        ext = os.path.splitext(path)[1].lower()
-        dest = os.path.join(out_dir, f"{base_name}{ext}")
-        shutil.move(path, dest)
-        result[key] = dest
-        break
-    shutil.rmtree(tmp, ignore_errors=True)
+def step(manifest, cid, name, factory):
+    """Reuses a finished step from the manifest, else runs it and records the result."""
+    entry = manifest.setdefault(cid, {})
+    if name in entry and entry[name].get("status") == "success":
+        print(f"    {name}: cached [{entry[name].get('task_id')}]")
+        return entry[name]
+    result = factory()
+    entry[name] = result
+    entry.pop("error", None)
+    save_manifest(manifest)
     return result
 
 
-async def ensure_task(client, manifest, cid, step, create, label):
-    """Create (or reuse from the manifest) a task and wait for it. Returns the finished Task."""
-    entry = manifest.setdefault(cid, {})
-    task_id = entry.get(step)
-    if task_id:
-        try:
-            task = await client.get_task(task_id)
-            if task.status.value in ("success",):
-                print(f"    {label}: cached [{task_id}]")
-                return task
-            if task.status.value in ("queued", "running"):
-                return await wait(client, task_id, label)
-        except Exception as e:  # noqa: BLE001 - a stale id just means we recreate the task
-            print(f"    {label}: cached id unusable ({e}); recreating")
-    task_id = await create()
-    entry[step] = task_id
-    save_manifest(manifest)
-    return await wait(client, task_id, label)
+def copy_model(result, dest_dir, base_name):
+    """Copies the CLI's downloaded model file into Assets/Art/Tripo/<id>/<base_name>.<ext>."""
+    src = result.get("model_file")
+    if not src:
+        files = result.get("files") or []
+        src = next((f for f in files if str(f).lower().endswith((".fbx", ".glb"))), None)
+    if not src or not os.path.exists(src):
+        raise TripoError(1, f"no model file in CLI result: {json.dumps(result)[:300]}")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, base_name + os.path.splitext(src)[1].lower())
+    shutil.copy2(src, dest)
+    return dest
 
 
-async def process_character(client, manifest, c, skip_anim):
+def process_character(manifest, c, skip_anim):
     cid = c["id"]
-    out_dir = os.path.join(ART_DIR, cid)
+    art = os.path.join(ART_DIR, cid)
+    out = os.path.join(OUT_DIR, cid)
+    os.makedirs(out, exist_ok=True)
     print(f"== {cid}")
-    model = await ensure_task(client, manifest, cid, "model",
-        lambda: client.text_to_model(prompt=c["prompt"], model_version=MODEL_VERSION, face_limit=c["faces"], texture=True, pbr=True), "model")
-    if model.output.rendered_image:
-        os.makedirs(PREVIEW_DIR, exist_ok=True)
-        await client.download_rendered_image(model, PREVIEW_DIR)
+    model = step(manifest, cid, "model", lambda: run(
+        ["generate", "text-to-model", c["prompt"], "--model", GEN_MODEL, "-p", f"face_limit={c['faces']}",
+         "--name", cid, "-o", os.path.join(out, "model")], "model"))
+    print(f"    model task {model.get('task_id')} preview={model.get('preview')}")
     if not c["rig"]:
-        conv = await ensure_task(client, manifest, cid, "convert",
-            lambda: client.create_task({"type": "convert_model", "format": "FBX", "original_model_task_id": model.task_id,
-                                        "texture_format": "PNG", "texture_size": 2048, "pivot_to_center_bottom": True}), "convert")
-        files = await download(client, conv, out_dir, f"{cid}_model")
-        print(f"    saved {files}")
+        conv = step(manifest, cid, "convert", lambda: run(
+            ["model", "convert", model["task_id"], "--format", "FBX", "--texture-format", "PNG", "--texture-size", "2048",
+             "--pivot-to-center-bottom", "-o", os.path.join(out, "convert")], "convert"))
+        print(f"    saved {copy_model(conv, art, cid + '_model')}")
         return
-    rig = await ensure_task(client, manifest, cid, "rig",
-        lambda: client.create_task({"type": "animate_rig", "original_model_task_id": model.task_id, "out_format": "fbx",
-                                    "model_version": RIG_VERSION, "rig_type": "biped", "spec": "tripo"}), "rig")
-    files = await download(client, rig, out_dir, f"{cid}_rig")
-    print(f"    saved {files}")
+    check = step(manifest, cid, "rigcheck", lambda: run(["anim", "check", model["task_id"], "-o", os.path.join(out, "check")], "rig-check"))
+    output = check.get("output") or check
+    riggable = output.get("riggable", check.get("riggable", True))
+    if riggable is False:
+        raise TripoError(6, f"{cid}: model is not riggable (rig_type={output.get('rig_type')}); regenerate with a clearer T-pose prompt")
+    rig = step(manifest, cid, "rig", lambda: run(
+        ["anim", "rig", model["task_id"], "--rig-type", "biped", "--spec", RIG_SPEC, "--out-format", "fbx", "-p", f"model={RIG_MODEL}",
+         "-o", os.path.join(out, "rig")], "rig"))
+    print(f"    saved {copy_model(rig, art, cid + '_rig')}")
     if skip_anim:
         return
     for index, group in enumerate(chunks(animations_for(c), 5)):
-        names = ["preset:" + a for a in group]
-        step = f"anim_{index}"
-        retarget = await ensure_task(client, manifest, cid, step,
-            lambda names=names: client.create_task({"type": "animate_retarget", "original_model_task_id": rig.task_id, "out_format": "fbx",
-                                                    "animations": names, "animate_in_place": True, "export_with_geometry": True,
-                                                    "bake_animation": True}), step)
-        files = await download(client, retarget, out_dir, f"{cid}_{step}")
-        manifest[cid][step + "_clips"] = group
+        name = f"anim_{index}"
+        result = step(manifest, cid, name, lambda group=group, name=name: run(
+            ["anim", "retarget", rig["task_id"], "--animation"] + [preset(a) for a in group]
+            + ["--out-format", "fbx", "--animate-in-place", "-o", os.path.join(out, name)], name))
+        manifest[cid][name]["clips"] = group
         save_manifest(manifest)
-        print(f"    saved {files} clips={group}")
+        print(f"    saved {copy_model(result, art, cid + '_' + name)} clips={group}")
 
 
-async def main():
+def balance():
+    try:
+        return run(["balance"], "balance")
+    except TripoError as e:
+        print(f"    balance check failed: {e}")
+        return {}
+
+
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--only", nargs="*", default=None)
@@ -186,23 +209,28 @@ async def main():
     if not os.environ.get("TRIPO_API_KEY"):
         print("TRIPO_API_KEY is not set (export it, or put the key in tools/tripo.key)", file=sys.stderr)
         sys.exit(2)
-    from tripo3d import TripoClient
+    if not os.path.exists(TRIPO):
+        print("tripo CLI not found; install with: npm install -g tripo-cli", file=sys.stderr)
+        sys.exit(2)
     manifest = load_manifest()
-    async with TripoClient() as client:
-        balance = await client.get_balance()
-        print(f"Balance before: {balance.balance} (frozen {balance.frozen})")
-        started = time.time()
-        for c in chars:
-            try:
-                await process_character(client, manifest, c, args.skip_anim)
-            except Exception as e:  # noqa: BLE001 - keep going with the other characters, report at the end
-                print(f"!! {c['id']} failed: {e}", file=sys.stderr)
-                manifest.setdefault(c["id"], {})["error"] = str(e)
-                save_manifest(manifest)
-        balance = await client.get_balance()
-        print(f"Balance after: {balance.balance}  elapsed {time.time() - started:.0f}s")
-        print("Next: in Unity run menu RuneArena > Build Character Prefabs (or the batch command in README).")
+    print(f"Balance before: {balance()}")
+    started = time.time()
+    failures = 0
+    for c in chars:
+        try:
+            process_character(manifest, c, args.skip_anim)
+        except TripoError as e:
+            failures += 1
+            print(f"!! {c['id']} failed: {e}", file=sys.stderr)
+            manifest.setdefault(c["id"], {})["error"] = str(e)
+            save_manifest(manifest)
+            if e.code == 4:
+                print("!! out of credits — stopping. Top up at https://developers.tripo3d.ai (tripo topup) and re-run.", file=sys.stderr)
+                break
+    print(f"Balance after: {balance()}  elapsed {time.time() - started:.0f}s  failures {failures}")
+    print("Next: Unity menu RuneArena > Build Character Prefabs (or -executeMethod RuneArena.Editor.CharacterPrefabBuilder.BuildAll).")
+    sys.exit(1 if failures else 0)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

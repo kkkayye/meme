@@ -63,7 +63,11 @@
 
 ## 角色模型流水线（Tripo 3D，v0.3）
 
-1. 把 Tripo API key 放到 `tools/tripo.key`（一行，`tsk_` 开头；该文件已在 .gitignore 里），或者导出环境变量 `TRIPO_API_KEY`。
-2. 运行 `tools/.venv/bin/python tools/tripo_pipeline.py`（先用 `--dry-run` 看计划）。脚本对三个英雄、两种小兵做 文字生成 → 自动绑骨（v1.0 人形骨骼）→ 预设动作重定向（idle / run / hurt / fall / dive + 普攻 + 技能）→ FBX 下载到 `Assets/Art/Tripo/<id>/`；防御塔只生成静态模型。进度记在 `tools/tripo_manifest.json`，中断后重跑会续接而不是重新扣费。
+基于官方 `tripo` CLI（V3 接口）。前置：`npm install -g tripo-cli`（需要 Node 20+），API key 放在 `tools/tripo.key`（一行，`tsk_` 开头，已 gitignore）或环境变量 `TRIPO_API_KEY`。账号 API 积分不足时所有任务都会被拒（exit 4），充值入口是 `tripo topup` 或 developers.tripo3d.ai 的 Billing 页。
+
+1. `tools/.venv/bin/python tools/tripo_pipeline.py --dry-run` 看计划和预估积分（当前方案约 565 积分）。
+2. `tools/.venv/bin/python tools/tripo_pipeline.py` 正式跑：每个角色 文字生成（tripo-v3.1）→ 免费绑骨检查 → 绑骨（v1.0 人形骨骼、Mixamo 骨骼命名、FBX）→ 预设动作重定向（idle / run / hurt / fall / dive + 普攻 + 技能，原地播放）→ 复制到 `Assets/Art/Tripo/<id>/`；塔只生成静态模型并转 FBX。每一步的结果记在 `tools/tripo_manifest.json`，中断重跑会跳过已完成的步骤，不重复扣费；每个角色的 `preview.png` 在 `tools/tripo_out/<id>/` 里，不满意可以删掉该角色的 manifest 条目重跑。
 3. Unity 里菜单 **RuneArena → Build Character Prefabs**（或批处理 `-executeMethod RuneArena.Editor.CharacterPrefabBuilder.BuildAll`）：为每个角色生成 Animator Controller（移动混合树 + 普攻 / 技能 / 冲刺 / 受击 / 死亡状态）和 `Assets/Resources/Characters/<id>.prefab`。
 4. 运行时 `UnitVisuals` 发现同名预制体就用模型替换胶囊体，按 `BodyHeight` 自动缩放并把脚放在地面；`UnitAnimator` 把移动速度、施法、冲刺、受击、死亡翻译成动画参数。模型朝向不对时改预制体上 `CharacterVisualConfig.FacingYawOffset`。
+
+`tools/tripo_pipeline_v2_legacy.py` 是基于 Python SDK 的旧版（V2 接口，2026-11-01 停用），仅作参考。
