@@ -1,0 +1,18 @@
+{
+    "name": "RuneArena.Editor",
+    "rootNamespace": "RuneArena.Editor",
+    "references": [
+        "RuneArena.Runtime"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
