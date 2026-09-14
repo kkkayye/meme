@@ -4,12 +4,12 @@ using UnityEngine;
 
 namespace RuneArena.Player
 {
-    /// <summary>Legacy Input Manager bindings for the human unit: WASD movement, mouse facing, LMB basic attack, Q/W/E/R quick-cast, Esc pause, Enter/Space ready, 1/2/3 draft picks.</summary>
+    /// <summary>Legacy Input Manager bindings for the human unit: WASD movement, mouse facing, LMB basic attack, Q/E/F/R quick-cast, Esc pause, Enter/Space ready, 1/2/3 draft picks.</summary>
     public sealed class PlayerInput : MonoBehaviour
     {
         private static readonly Plane Ground = new Plane(Vector3.up, Vector3.zero);
         private static readonly KeyCode[] DraftKeys = { KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3 };
-        private static readonly KeyCode[] SkillKeys = { KeyCode.Q, KeyCode.W, KeyCode.E, KeyCode.R };
+        private static readonly KeyCode[] SkillKeys = { KeyCode.Q, KeyCode.E, KeyCode.F, KeyCode.R };
         private static readonly SkillKey[] SkillSlots = { SkillKey.Q, SkillKey.W, SkillKey.E, SkillKey.R };
 
         public static PlayerInput Instance { get; private set; }

@@ -6,11 +6,11 @@ using UnityEngine.UI;
 
 namespace RuneArena.UI
 {
-    /// <summary>Bottom-center skill bar: 5 slots (LMB, Q, W, E, R) with key labels, radial cooldown overlays, cooldown seconds, charges and a ready ping.</summary>
+    /// <summary>Bottom-center skill bar: 5 slots (LMB, Q, E, F, R) with key labels, radial cooldown overlays, cooldown seconds, charges and a ready ping.</summary>
     public sealed class SkillBar : MonoBehaviour
     {
         private static readonly SkillKey[] Keys = { SkillKey.Basic, SkillKey.Q, SkillKey.W, SkillKey.E, SkillKey.R };
-        private static readonly string[] KeyLabels = { "LMB", "Q", "W", "E", "R" };
+        private static readonly string[] KeyLabels = { "LMB", "Q", "E", "F", "R" };
         private const float SlotSize = 84f;
         private const float SlotGap = 10f;
 

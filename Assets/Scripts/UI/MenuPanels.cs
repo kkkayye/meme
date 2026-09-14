@@ -76,7 +76,7 @@ namespace RuneArena.UI
             UiFactory.Overlay(_mainMenu, "Bg", UiStyle.Opaque);
             Text title = UiFactory.OutlinedText(_mainMenu, "Title", "符文竞技场\n<size=40>RUNE ARENA</size>", 72, UiStyle.TextMain, TextAnchor.MiddleCenter);
             UiFactory.Place(title.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 240f), new Vector2(900f, 160f));
-            Text sub = UiFactory.Text(_mainMenu, "Sub", "符文抽选 · 装备商店 · 宝箱抽卡 · 回合制竞技\nWASD 移动  鼠标瞄准  左键普攻  Q/W/E/R 技能", 24, UiStyle.TextMuted, TextAnchor.MiddleCenter);
+            Text sub = UiFactory.Text(_mainMenu, "Sub", "符文抽选 · 装备商店 · 宝箱抽卡 · 回合制竞技\nWASD 移动  鼠标瞄准  左键普攻  Q/E/F/R 技能", 24, UiStyle.TextMuted, TextAnchor.MiddleCenter);
             UiFactory.Place(sub.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 120f), new Vector2(1000f, 70f));
             Text sizeLabel = UiFactory.Text(_mainMenu, "SizeLabel", "队伍规模 Team size", 24, UiStyle.TextMain, TextAnchor.MiddleCenter);
             UiFactory.Place(sizeLabel.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 40f), new Vector2(600f, 32f));
