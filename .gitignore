@@ -16,3 +16,8 @@
 *.opendb
 *.VC.db
 .DS_Store
+
+# Tripo pipeline
+/tools/.venv/
+/tools/tripo_out/
+/tools/tripo.key

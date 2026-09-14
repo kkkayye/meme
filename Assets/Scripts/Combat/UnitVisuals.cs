@@ -7,17 +7,21 @@ using UnityEngine;
 
 namespace RuneArena.Combat
 {
-    /// <summary>Builds the hero body from primitives (capsule, nose cube, team ring) and exposes flash / squash / stretch / invisibility / death visuals.</summary>
+    /// <summary>Builds a unit's body: an imported character prefab from Resources/Characters/&lt;id&gt; when one exists (with UnitAnimator), else primitives (capsule / tower). Exposes flash, squash, stretch, invisibility and death visuals.</summary>
     [DisallowMultipleComponent]
     public sealed class UnitVisuals : MonoBehaviour
     {
         private static readonly Vector3 CastPose = new Vector3(1.1f, 0.85f, 1.1f);
         private static readonly Vector3 ReleasePose = new Vector3(0.9f, 1.15f, 0.9f);
+        private const string CharacterResourcePrefix = "Characters/";
         private const float NoseSize = 0.3f;
         private const float RingRadius = 0.75f;
+        private const float DeathHideDelay = 1.6f;
 
         private readonly List<Renderer> _renderers = new List<Renderer>();
+        private readonly List<Material[]> _originalMaterials = new List<Material[]>();
         private readonly List<Material> _materials = new List<Material>();
+        private readonly List<Color> _originalColors = new List<Color>();
         private Material _translucent;
         private Renderer _ring;
         private bool _built;
@@ -26,6 +30,7 @@ namespace RuneArena.Combat
         private bool _flashing;
         private Coroutine _scaleRoutine;
         private Coroutine _flashRoutine;
+        private Coroutine _deathRoutine;
 
         public Unit Owner { get; private set; }
         /// <summary>Every renderer that belongs to the body (for hit flash and invisibility).</summary>
@@ -34,13 +39,16 @@ namespace RuneArena.Combat
         /// <summary>Root transform of the scalable body (squash & stretch target).</summary>
         public Transform Body { get; private set; }
         public bool IsBuilt => _built;
+        /// <summary>True when an imported character model (not primitives) is displayed.</summary>
+        public bool HasModel { get; private set; }
+        public UnitAnimator Animator { get; private set; }
 
         private void Awake()
         {
             Owner = GetComponent<Unit>();
         }
 
-        /// <summary>Creates capsule (radius 0.5, height 2), nose cube, team ring and materials in code. Idempotent.</summary>
+        /// <summary>Creates the body (model prefab or primitives), the team ring and materials in code. Idempotent.</summary>
         public void Build(HeroDefinition hero, Team team)
         {
             if (hero == null) throw new ArgumentNullException(nameof(hero));
@@ -50,14 +58,59 @@ namespace RuneArena.Combat
             Body = new GameObject("Body").transform;
             Body.SetParent(transform, false);
             Body.localPosition = Vector3.zero;
-            if (hero.Kind == UnitKind.Tower) BuildTower(hero, teamColor);
-            else BuildCapsuleBody(hero, teamColor);
+            if (!TryBuildModel(hero))
+            {
+                if (hero.Kind == UnitKind.Tower) BuildTower(hero);
+                else BuildCapsuleBody(hero);
+            }
+            BuildRing(hero, teamColor);
             _translucent = PrimitiveFactory.Unlit(new Color(BodyColor.r, BodyColor.g, BodyColor.b, GameConstants.InvisibleOwnTeamAlpha));
             _built = true;
         }
 
-        /// <summary>Heroes and minions: capsule sized by BodyRadius/BodyHeight, a nose cube and a team ring.</summary>
-        private void BuildCapsuleBody(HeroDefinition hero, Color teamColor)
+        /// <summary>Instantiates Resources/Characters/&lt;heroId&gt;.prefab under Body, fits it to BodyHeight with feet on the ground and binds its Animator.</summary>
+        private bool TryBuildModel(HeroDefinition hero)
+        {
+            GameObject prefab = Resources.Load<GameObject>(CharacterResourcePrefix + hero.Id);
+            if (prefab == null) return false;
+            GameObject instance = Instantiate(prefab, Body);
+            instance.name = "Model";
+            CharacterVisualConfig config = instance.GetComponent<CharacterVisualConfig>();
+            float yaw = config != null ? config.FacingYawOffset : 0f;
+            float scaleMultiplier = config != null ? config.ScaleMultiplier : 1f;
+            float groundOffset = config != null ? config.GroundOffset : 0f;
+            instance.transform.localPosition = Vector3.zero;
+            instance.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            instance.transform.localScale = Vector3.one;
+            Renderer[] renderers = instance.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                Destroy(instance);
+                return false;
+            }
+            Bounds bounds = WorldBounds(renderers);
+            float scale = bounds.size.y > 1e-3f ? hero.BodyHeight / bounds.size.y * scaleMultiplier : 1f;
+            instance.transform.localScale = Vector3.one * scale;
+            bounds = WorldBounds(renderers);
+            Vector3 offset = transform.position - bounds.center;
+            offset.y = transform.position.y - bounds.min.y + groundOffset;
+            instance.transform.position += offset;
+            for (int i = 0; i < renderers.Length; i++) RegisterRenderer(renderers[i]);
+            Animator animator = instance.GetComponentInChildren<Animator>();
+            if (animator != null && Owner != null) Animator = UnitAnimator.Attach(Owner, animator);
+            HasModel = true;
+            return true;
+        }
+
+        private static Bounds WorldBounds(Renderer[] renderers)
+        {
+            Bounds bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+            return bounds;
+        }
+
+        /// <summary>Heroes and minions without a model: capsule sized by BodyRadius/BodyHeight plus a nose cube.</summary>
+        private void BuildCapsuleBody(HeroDefinition hero)
         {
             float radius = hero.BodyRadius;
             float height = hero.BodyHeight;
@@ -67,7 +120,7 @@ namespace RuneArena.Combat
             capsule.transform.localPosition = new Vector3(0f, height * 0.5f, 0f);
             capsule.transform.localScale = new Vector3(radius * 2f, height * 0.5f, radius * 2f);
             PrimitiveFactory.RemoveCollider(capsule);
-            AddBodyRenderer(capsule.GetComponent<Renderer>(), BodyColor);
+            AddPrimitive(capsule.GetComponent<Renderer>(), BodyColor);
 
             float nose = NoseSize * (radius / GameConstants.HeroRadius);
             GameObject noseGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -76,17 +129,11 @@ namespace RuneArena.Combat
             noseGo.transform.localPosition = new Vector3(0f, height * 0.6f, radius + nose * 0.35f);
             noseGo.transform.localScale = new Vector3(nose, nose, nose * 1.6f);
             PrimitiveFactory.RemoveCollider(noseGo);
-            AddBodyRenderer(noseGo.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.white, 0.6f));
-
-            Color ringColor = new Color(teamColor.r, teamColor.g, teamColor.b, 0.85f);
-            float ringRadius = RingRadius * (radius / GameConstants.HeroRadius);
-            GameObject ring = PrimitiveFactory.Disc("TeamRing", transform, new Vector3(0f, 0.03f, 0f), ringRadius, 0.04f, PrimitiveFactory.Unlit(ringColor));
-            ring.transform.localPosition = new Vector3(0f, 0.03f, 0f);
-            _ring = ring.GetComponent<Renderer>();
+            AddPrimitive(noseGo.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.white, 0.6f));
         }
 
-        /// <summary>Towers: a tall cylinder, a turret cube that shows facing, and a base disc.</summary>
-        private void BuildTower(HeroDefinition hero, Color teamColor)
+        /// <summary>Towers without a model: a tall cylinder and a turret cube that shows facing.</summary>
+        private void BuildTower(HeroDefinition hero)
         {
             float radius = hero.BodyRadius;
             float height = hero.BodyHeight;
@@ -96,7 +143,7 @@ namespace RuneArena.Combat
             column.transform.localPosition = new Vector3(0f, height * 0.5f, 0f);
             column.transform.localScale = new Vector3(radius * 2f, height * 0.5f, radius * 2f);
             PrimitiveFactory.RemoveCollider(column);
-            AddBodyRenderer(column.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.black, 0.25f));
+            AddPrimitive(column.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.black, 0.25f));
 
             GameObject turret = GameObject.CreatePrimitive(PrimitiveType.Cube);
             turret.name = "Turret";
@@ -104,25 +151,55 @@ namespace RuneArena.Combat
             turret.transform.localPosition = new Vector3(0f, height + 0.4f, radius * 0.4f);
             turret.transform.localScale = new Vector3(radius * 0.9f, 0.8f, radius * 1.4f);
             PrimitiveFactory.RemoveCollider(turret);
-            AddBodyRenderer(turret.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.white, 0.4f));
+            AddPrimitive(turret.GetComponent<Renderer>(), Color.Lerp(BodyColor, Color.white, 0.4f));
+        }
 
-            Color ringColor = new Color(teamColor.r, teamColor.g, teamColor.b, 0.6f);
-            GameObject ring = PrimitiveFactory.Disc("Base", transform, new Vector3(0f, 0.03f, 0f), radius * 1.6f, 0.06f, PrimitiveFactory.Unlit(ringColor));
+        private void BuildRing(HeroDefinition hero, Color teamColor)
+        {
+            float alpha = hero.Kind == UnitKind.Tower ? 0.6f : 0.85f;
+            float radius = hero.Kind == UnitKind.Tower ? hero.BodyRadius * 1.6f : RingRadius * (hero.BodyRadius / GameConstants.HeroRadius);
+            GameObject ring = PrimitiveFactory.Disc("TeamRing", transform, new Vector3(0f, 0.03f, 0f), radius, 0.04f, PrimitiveFactory.Unlit(new Color(teamColor.r, teamColor.g, teamColor.b, alpha)));
             ring.transform.localPosition = new Vector3(0f, 0.03f, 0f);
             _ring = ring.GetComponent<Renderer>();
         }
 
-        /// <summary>Invisible: alpha 0.3 for the local human's team, renderers hidden for the enemy team. False restores full visibility.</summary>
+        private void AddPrimitive(Renderer renderer, Color color)
+        {
+            renderer.sharedMaterial = PrimitiveFactory.Lit(color);
+            RegisterRenderer(renderer);
+        }
+
+        /// <summary>Tracks a renderer and instanced copies of its materials (for flash and invisibility).</summary>
+        private void RegisterRenderer(Renderer renderer)
+        {
+            Material[] instances = Application.isPlaying ? renderer.materials : renderer.sharedMaterials;
+            _renderers.Add(renderer);
+            _originalMaterials.Add(instances);
+            for (int i = 0; i < instances.Length; i++)
+            {
+                _materials.Add(instances[i]);
+                _originalColors.Add(instances[i] != null && instances[i].HasProperty("_Color") ? instances[i].color : Color.white);
+            }
+        }
+
+        /// <summary>Invisible: translucent for the local human's team, renderers hidden for the enemy team. False restores full visibility.</summary>
         public void SetInvisible(bool invisible)
         {
             _invisible = invisible;
             Refresh();
         }
 
-        /// <summary>Hides the body (dead) or shows it again.</summary>
+        /// <summary>Hides the body (dead) or shows it again. Models stay visible briefly so the death animation can play.</summary>
         public void SetDead(bool dead)
         {
             _dead = dead;
+            if (_deathRoutine != null) StopCoroutine(_deathRoutine);
+            _deathRoutine = null;
+            if (dead && HasModel && isActiveAndEnabled)
+            {
+                _deathRoutine = StartCoroutine(HideAfterDeath());
+                return;
+            }
             Refresh();
         }
 
@@ -134,28 +211,28 @@ namespace RuneArena.Combat
             _flashRoutine = StartCoroutine(FlashRoutine());
         }
 
-        /// <summary>Cast windup pose: scale (1.1, 0.85, 1.1), held until release.</summary>
+        /// <summary>Cast windup pose: scale (1.1, 0.85, 1.1), held until release. Skipped for animated models.</summary>
         public void SquashCast()
         {
-            if (!_built) return;
+            if (!_built || HasModel) return;
             StopScale();
             Body.localScale = CastPose;
         }
 
-        /// <summary>Release pose: (0.9, 1.15, 0.9) easing back to 1 over GameConstants.SquashStretchSeconds.</summary>
+        /// <summary>Release pose: (0.9, 1.15, 0.9) easing back to 1 over GameConstants.SquashStretchSeconds. Skipped for animated models.</summary>
         public void SquashRelease()
         {
-            if (!_built || !isActiveAndEnabled) return;
+            if (!_built || HasModel || !isActiveAndEnabled) return;
             StopScale();
             _scaleRoutine = StartCoroutine(EaseScale(ReleasePose, Vector3.one, GameConstants.SquashStretchSeconds));
         }
 
-        /// <summary>Stretches the body along its facing (dashes are always along facing) by factor t (0 = none, 1 = full dash stretch).</summary>
+        /// <summary>Stretches the body along its facing by factor t (0 = none, 1 = full dash stretch).</summary>
         public void StretchAlong(Vector3 dir, float t)
         {
             if (!_built) return;
             StopScale();
-            t = Mathf.Clamp01(t);
+            t = Mathf.Clamp01(t) * (HasModel ? 0.5f : 1f);
             Body.localScale = new Vector3(1f - 0.15f * t, 1f - 0.15f * t, 1f + 0.35f * t);
         }
 
@@ -168,25 +245,28 @@ namespace RuneArena.Combat
             else Body.localScale = Vector3.one;
         }
 
-        private void AddBodyRenderer(Renderer renderer, Color color)
-        {
-            Material material = PrimitiveFactory.Lit(color);
-            renderer.sharedMaterial = material;
-            _renderers.Add(renderer);
-            _materials.Add(material);
-        }
-
         private void Refresh()
         {
             if (!_built) return;
             bool enemyView = IsEnemyOfLocalHuman();
             bool visible = !_dead && !(_invisible && enemyView);
+            bool translucent = _invisible && !enemyView && !HasModel;
             for (int i = 0; i < _renderers.Count; i++)
             {
-                _renderers[i].enabled = visible;
-                if (!_flashing) _renderers[i].sharedMaterial = _invisible && !enemyView ? _translucent : _materials[i];
+                Renderer r = _renderers[i];
+                if (r == null) continue;
+                r.enabled = visible;
+                if (_flashing) continue;
+                r.sharedMaterials = translucent ? Filled(_originalMaterials[i].Length, _translucent) : _originalMaterials[i];
             }
             if (_ring != null) _ring.enabled = !_dead && !(_invisible && enemyView);
+        }
+
+        private static Material[] Filled(int count, Material material)
+        {
+            var array = new Material[count];
+            for (int i = 0; i < count; i++) array[i] = material;
+            return array;
         }
 
         private bool IsEnemyOfLocalHuman()
@@ -195,10 +275,21 @@ namespace RuneArena.Combat
             return human != null && Owner != null && human.Team != Owner.Team;
         }
 
+        private IEnumerator HideAfterDeath()
+        {
+            if (_ring != null) _ring.enabled = false;
+            yield return new WaitForSeconds(DeathHideDelay);
+            _deathRoutine = null;
+            Refresh();
+        }
+
         private IEnumerator FlashRoutine()
         {
             _flashing = true;
-            for (int i = 0; i < _materials.Count; i++) _materials[i].color = Color.white;
+            for (int i = 0; i < _materials.Count; i++)
+            {
+                if (_materials[i] != null && _materials[i].HasProperty("_Color")) _materials[i].color = Color.white;
+            }
             yield return new WaitForSecondsRealtime(GameConstants.HitFlashSeconds);
             RestoreColors();
             _flashing = false;
@@ -208,9 +299,10 @@ namespace RuneArena.Combat
 
         private void RestoreColors()
         {
-            if (_materials.Count == 0) return;
-            _materials[0].color = BodyColor;
-            for (int i = 1; i < _materials.Count; i++) _materials[i].color = Color.Lerp(BodyColor, Color.white, 0.6f);
+            for (int i = 0; i < _materials.Count; i++)
+            {
+                if (_materials[i] != null && _materials[i].HasProperty("_Color")) _materials[i].color = _originalColors[i];
+            }
         }
 
         private IEnumerator EaseScale(Vector3 from, Vector3 to, float seconds)
@@ -236,10 +328,7 @@ namespace RuneArena.Combat
 
         private void OnDestroy()
         {
-            for (int i = 0; i < _materials.Count; i++)
-            {
-                PrimitiveFactory.SafeDestroy(_materials[i]);
-            }
+            for (int i = 0; i < _materials.Count; i++) PrimitiveFactory.SafeDestroy(_materials[i]);
             PrimitiveFactory.SafeDestroy(_translucent);
         }
     }

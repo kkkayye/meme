@@ -60,3 +60,10 @@
 - 尚未在编辑器里实际运行过（本机 license 未激活），只做了编译验证和代码走查；第一次 Play 后可能需要微调数值和 UI 布局。
 - 没有联网对战；架构上所有逻辑都走 `Unit` 和服务，不依赖"本地玩家"单例，方便后续接 Netcode。
 - 机器人是简单状态机；美术为占位几何体。
+
+## 角色模型流水线（Tripo 3D，v0.3）
+
+1. 把 Tripo API key 放到 `tools/tripo.key`（一行，`tsk_` 开头；该文件已在 .gitignore 里），或者导出环境变量 `TRIPO_API_KEY`。
+2. 运行 `tools/.venv/bin/python tools/tripo_pipeline.py`（先用 `--dry-run` 看计划）。脚本对三个英雄、两种小兵做 文字生成 → 自动绑骨（v1.0 人形骨骼）→ 预设动作重定向（idle / run / hurt / fall / dive + 普攻 + 技能）→ FBX 下载到 `Assets/Art/Tripo/<id>/`；防御塔只生成静态模型。进度记在 `tools/tripo_manifest.json`，中断后重跑会续接而不是重新扣费。
+3. Unity 里菜单 **RuneArena → Build Character Prefabs**（或批处理 `-executeMethod RuneArena.Editor.CharacterPrefabBuilder.BuildAll`）：为每个角色生成 Animator Controller（移动混合树 + 普攻 / 技能 / 冲刺 / 受击 / 死亡状态）和 `Assets/Resources/Characters/<id>.prefab`。
+4. 运行时 `UnitVisuals` 发现同名预制体就用模型替换胶囊体，按 `BodyHeight` 自动缩放并把脚放在地面；`UnitAnimator` 把移动速度、施法、冲刺、受击、死亡翻译成动画参数。模型朝向不对时改预制体上 `CharacterVisualConfig.FacingYawOffset`。
