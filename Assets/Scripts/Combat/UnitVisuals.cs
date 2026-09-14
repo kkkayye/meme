@@ -41,9 +41,11 @@ namespace RuneArena.Combat
         public bool IsBuilt => _built;
         /// <summary>True when an imported character model (not primitives) is displayed.</summary>
         public bool HasModel { get; private set; }
-        /// <summary>True when the model drives an Animator; procedural squash/stretch then steps aside.</summary>
-        public bool HasAnimator => Animator != null;
+        /// <summary>True when the model animates its own skeleton (clips or procedural bones); squash/stretch then steps aside.</summary>
+        public bool HasAnimator => Animator != null || RigAnimator != null;
         public UnitAnimator Animator { get; private set; }
+        public ProceduralRigAnimator RigAnimator { get; private set; }
+        public ProceduralBodyMotion BodyMotion { get; private set; }
 
         private void Awake()
         {
@@ -98,10 +100,24 @@ namespace RuneArena.Combat
             offset.y = transform.position.y - bounds.min.y + groundOffset;
             instance.transform.position += offset;
             for (int i = 0; i < renderers.Length; i++) RegisterRenderer(renderers[i]);
-            Animator animator = instance.GetComponentInChildren<Animator>();
-            if (animator != null && Owner != null) Animator = UnitAnimator.Attach(Owner, animator);
+            AttachMotion(instance);
             HasModel = true;
             return true;
+        }
+
+        /// <summary>Real animation clips win; a rig without clips gets procedural bone animation; an unrigged mesh gets whole-body motion.</summary>
+        private void AttachMotion(GameObject instance)
+        {
+            if (Owner == null) return;
+            Animator animator = instance.GetComponentInChildren<Animator>();
+            if (animator != null && animator.runtimeAnimatorController != null)
+            {
+                Animator = UnitAnimator.Attach(Owner, animator);
+                return;
+            }
+            if (animator != null) animator.enabled = false;
+            RigAnimator = ProceduralRigAnimator.TryAttach(Owner, instance.transform);
+            if (RigAnimator == null) BodyMotion = ProceduralBodyMotion.Attach(Owner, instance.transform);
         }
 
         private static Bounds WorldBounds(Renderer[] renderers)

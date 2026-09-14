@@ -71,3 +71,11 @@
 4. 运行时 `UnitVisuals` 发现同名预制体就用模型替换胶囊体，按 `BodyHeight` 自动缩放并把脚放在地面；`UnitAnimator` 把移动速度、施法、冲刺、受击、死亡翻译成动画参数。模型朝向不对时改预制体上 `CharacterVisualConfig.FacingYawOffset`。
 
 `tools/tripo_pipeline_v2_legacy.py` 是基于 Python SDK 的旧版（V2 接口，2026-11-01 停用），仅作参考。
+
+## 已导入的模型与程序化动画（v0.3）
+
+- `Assets/Art/Tripo/blaze/`：猫咪毛绒（Tripo Studio 导出，Blender 减面到 1.5 万面，保留 30 根人形骨骼）。
+- `Assets/Art/Tripo/vanguard/`：柴犬战士（无骨骼静态模型，减面到 1.5 万面）。
+- 每个文件夹里的 `visual.json` 存朝向 / 缩放 / 离地修正（两个模型都是 `facingYawOffset: 180`），Build Character Prefabs 时写进预制体。
+- 减面与骨骼动画剥离：`Blender -b --python tools/blender_prepare_character.py -- <in.fbx> <out.fbx> 15000 [--anim-only]`。
+- 动画优先级：有动画片段的模型走 `UnitAnimator`（Animator 状态机）；有骨骼没片段的模型走 `ProceduralRigAnimator`（按骨骼名驱动跑步摆腿摆臂、普攻挥臂、施法举手、受击后仰、冲刺前倾、死亡倒地，兼容 Tripo / Mixamo 命名）；没骨骼的模型走 `ProceduralBodyMotion`（颠簸、前倾、扑击、后仰、倒地）。

@@ -65,7 +65,9 @@ namespace RuneArena.Editor
             instance.name = id + "_model";
             try
             {
-                if (instance.GetComponent<CharacterVisualConfig>() == null) instance.AddComponent<CharacterVisualConfig>();
+                CharacterVisualConfig config = instance.GetComponent<CharacterVisualConfig>();
+                if (config == null) config = instance.AddComponent<CharacterVisualConfig>();
+                ApplyVisualJson(config, folder);
                 if (clips.Count > 0) AttachAnimator(instance, id, folder, clips);
                 else RemoveAnimator(instance);
                 string prefabPath = ResourcesFolder + "/" + id + ".prefab";
@@ -77,6 +79,26 @@ namespace RuneArena.Editor
             {
                 Object.DestroyImmediate(instance);
             }
+        }
+
+        [System.Serializable]
+        private sealed class VisualJson
+        {
+            public float facingYawOffset;
+            public float scaleMultiplier = 1f;
+            public float groundOffset;
+        }
+
+        /// <summary>Optional Assets/Art/Tripo/&lt;id&gt;/visual.json: {"facingYawOffset":180,"scaleMultiplier":1,"groundOffset":0}.</summary>
+        private static void ApplyVisualJson(CharacterVisualConfig config, string folder)
+        {
+            string path = folder + "/visual.json";
+            if (!File.Exists(path)) return;
+            VisualJson json = JsonUtility.FromJson<VisualJson>(File.ReadAllText(path));
+            if (json == null) return;
+            config.FacingYawOffset = json.facingYawOffset;
+            config.ScaleMultiplier = json.scaleMultiplier <= 0f ? 1f : json.scaleMultiplier;
+            config.GroundOffset = json.groundOffset;
         }
 
         private static GameObject FindModel(string folder, string id)

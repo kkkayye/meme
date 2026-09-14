@@ -78,6 +78,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 767df78b98a434bbb8ef498301819aae, type: 3}
   m_Name: 
   m_EditorClassIdentifier: RuneArena.Runtime::RuneArena.Combat.CharacterVisualConfig
-  FacingYawOffset: 0
+  FacingYawOffset: 180
   ScaleMultiplier: 1
   GroundOffset: 0
