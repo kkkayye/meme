@@ -22,6 +22,7 @@ namespace RuneArena.UI
         private Text _matchEndTitle;
         private Text _matchEndStats;
         private readonly List<Button> _sizeButtons = new List<Button>();
+        private readonly List<string> _heroIds = new List<string>();
         private int _teamSize = GameConstants.DefaultTeamSize;
 
         public static MenuPanels Build(Transform parent)
@@ -91,7 +92,7 @@ namespace RuneArena.UI
             UiFactory.Place(seedLabel.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -70f), new Vector2(600f, 30f));
             _seedField = UiFactory.InputField(_mainMenu, "Seed", "0", new Vector2(240f, 44f));
             UiFactory.Place((RectTransform)_seedField.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -110f), new Vector2(240f, 44f));
-            Button start = UiFactory.Button(_mainMenu, "Start", "开始 Start", 32, () => StartMatch(true));
+            Button start = UiFactory.Button(_mainMenu, "Start", "开始 Start  (Enter)", 32, () => StartMatch(true));
             UiFactory.SetButtonColor(start, UiStyle.ButtonSelected);
             UiFactory.Place((RectTransform)start.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -190f), new Vector2(320f, 64f));
             Button spectate = UiFactory.Button(_mainMenu, "Spectate", "观战 Bots only", 22, () => StartMatch(false));
@@ -121,13 +122,14 @@ namespace RuneArena.UI
         {
             _heroSelect = UiFactory.Stretch(root, "HeroSelect");
             UiFactory.Overlay(_heroSelect, "Bg", UiStyle.Opaque);
-            Text title = UiFactory.OutlinedText(_heroSelect, "Title", "选择英雄  Choose your hero", 48, UiStyle.TextMain, TextAnchor.MiddleCenter);
+            Text title = UiFactory.OutlinedText(_heroSelect, "Title", "选择英雄  Choose your hero   <size=26>(按 1 / 2 / 3)</size>", 48, UiStyle.TextMain, TextAnchor.MiddleCenter);
             UiFactory.Place(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -80f), new Vector2(900f, 60f));
             IReadOnlyList<HeroDefinition> heroes = ContentCatalog.Heroes;
             var size = new Vector2(440f, 560f);
             for (int i = 0; i < heroes.Count; i++)
             {
                 HeroDefinition hero = heroes[i];
+                _heroIds.Add(hero.Id);
                 float x = (i - (heroes.Count - 1) * 0.5f) * (size.x + 40f);
                 RectTransform inner = UiFactory.Card(_heroSelect, "Hero_" + hero.Id, size, hero.Color, UiStyle.CardBg, 6f);
                 RectTransform border = (RectTransform)inner.parent;
@@ -138,7 +140,7 @@ namespace RuneArena.UI
                 Text body = UiFactory.Text(inner, "Body", hero.Description + "\n\n" + UiText.HeroStatLine(hero) + "\n\n" + SkillLines(hero), 19, UiStyle.TextMain, TextAnchor.UpperLeft);
                 UiFactory.Place(body.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -110f), new Vector2(size.x - 40f, 360f));
                 string id = hero.Id;
-                Button pick = UiFactory.Button(inner, "Pick", "选择 Select", 26, () => GameServices.Match?.ConfirmHero(id));
+                Button pick = UiFactory.Button(inner, "Pick", "选择 Select  (" + (i + 1) + ")", 26, () => GameServices.Match?.ConfirmHero(id));
                 UiFactory.SetButtonColor(pick, UiStyle.Darken(hero.Color, 0.7f));
                 UiFactory.Place((RectTransform)pick.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 16f), new Vector2(size.x - 60f, 54f));
             }
@@ -186,6 +188,26 @@ namespace RuneArena.UI
             UiFactory.Place((RectTransform)resume.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0f), new Vector2(340f, 60f));
             Button menu = UiFactory.Button(_pause, "Menu", "退出到主菜单 Main Menu", 24, () => GameServices.Match?.ReturnToMenu());
             UiFactory.Place((RectTransform)menu.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -80f), new Vector2(340f, 56f));
+        }
+
+        /// <summary>Keyboard shortcuts: Enter starts from the main menu (or rematches), 1/2/3 pick a hero.</summary>
+        private void Update()
+        {
+            bool enter = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
+            if (_mainMenu.gameObject.activeInHierarchy)
+            {
+                if (enter) StartMatch(true);
+                return;
+            }
+            if (_heroSelect.gameObject.activeInHierarchy)
+            {
+                for (int i = 0; i < _heroIds.Count && i < 3; i++)
+                {
+                    if (Input.GetKeyDown(KeyCode.Alpha1 + i) || Input.GetKeyDown(KeyCode.Keypad1 + i)) GameServices.Match?.ConfirmHero(_heroIds[i]);
+                }
+                return;
+            }
+            if (_matchEnd.gameObject.activeInHierarchy && enter) GameServices.Match?.Rematch();
         }
 
         private static string BuildStats()

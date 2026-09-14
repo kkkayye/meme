@@ -41,6 +41,8 @@ namespace RuneArena.Combat
         public bool IsBuilt => _built;
         /// <summary>True when an imported character model (not primitives) is displayed.</summary>
         public bool HasModel { get; private set; }
+        /// <summary>True when the model drives an Animator; procedural squash/stretch then steps aside.</summary>
+        public bool HasAnimator => Animator != null;
         public UnitAnimator Animator { get; private set; }
 
         private void Awake()
@@ -214,7 +216,7 @@ namespace RuneArena.Combat
         /// <summary>Cast windup pose: scale (1.1, 0.85, 1.1), held until release. Skipped for animated models.</summary>
         public void SquashCast()
         {
-            if (!_built || HasModel) return;
+            if (!_built || HasAnimator) return;
             StopScale();
             Body.localScale = CastPose;
         }
@@ -222,7 +224,7 @@ namespace RuneArena.Combat
         /// <summary>Release pose: (0.9, 1.15, 0.9) easing back to 1 over GameConstants.SquashStretchSeconds. Skipped for animated models.</summary>
         public void SquashRelease()
         {
-            if (!_built || HasModel || !isActiveAndEnabled) return;
+            if (!_built || HasAnimator || !isActiveAndEnabled) return;
             StopScale();
             _scaleRoutine = StartCoroutine(EaseScale(ReleasePose, Vector3.one, GameConstants.SquashStretchSeconds));
         }
@@ -232,7 +234,7 @@ namespace RuneArena.Combat
         {
             if (!_built) return;
             StopScale();
-            t = Mathf.Clamp01(t) * (HasModel ? 0.5f : 1f);
+            t = Mathf.Clamp01(t) * (HasAnimator ? 0.5f : 1f);
             Body.localScale = new Vector3(1f - 0.15f * t, 1f - 0.15f * t, 1f + 0.35f * t);
         }
 

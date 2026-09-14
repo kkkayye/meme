@@ -1,5 +1,13 @@
 {
   "dependencies": {
+    "com.tripo3d.unitybridge": {
+      "version": "file:com.tripo3d.unitybridge",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.unity.modules.jsonserialize": "1.0.0"
+      }
+    },
     "com.unity.ext.nunit": {
       "version": "2.0.5",
       "depth": 1,
